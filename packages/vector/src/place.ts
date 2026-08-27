@@ -1,0 +1,104 @@
+/**
+ * Placing imported artwork into design space.
+ *
+ * Imported shapes arrive in the artwork's own user units with y pointing DOWN
+ * (SVG convention). Design space is normalised with v pointing UP. This module
+ * does that conversion once, so nothing downstream has to remember it.
+ */
+
+import type { DesignShape } from '@cupco/geometry';
+import type { ImportedShape } from './svg-import';
+import type { RGB } from './color';
+
+export interface PlacedArtwork {
+  /** Source shapes, normalised to a unit box with y still pointing down. */
+  shapes: { subpaths: { x: number; y: number }[][]; fill: RGB; opacity: number }[];
+  /** Aspect ratio (height / width) of the source artwork. */
+  aspect: number;
+}
+
+/**
+ * Normalise imported shapes into a unit box, preserving aspect ratio.
+ *
+ * Fitting to the artwork's real bounding box (rather than the SVG canvas)
+ * means a logo with generous whitespace around it does not arrive looking
+ * tiny on the cup.
+ */
+export function normaliseArtwork(
+  shapes: readonly ImportedShape[],
+): PlacedArtwork {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const s of shapes) {
+    for (const sp of s.subpaths) {
+      for (const p of sp.points) {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      }
+    }
+  }
+  if (!Number.isFinite(minX)) return { shapes: [], aspect: 1 };
+
+  const w = Math.max(1e-9, maxX - minX);
+  const h = Math.max(1e-9, maxY - minY);
+
+  return {
+    aspect: h / w,
+    shapes: shapes.map((s) => ({
+      fill: s.fill,
+      opacity: s.opacity,
+      subpaths: s.subpaths.map((sp) => sp.points.map((p) => ({
+        x: (p.x - minX) / w,   // 0..1
+        y: (p.y - minY) / h,   // 0..1, still y-down
+      }))),
+    })),
+  };
+}
+
+export interface PlacementTransform {
+  /** Centre in design space. */
+  u: number;
+  v: number;
+  /** Width as a fraction of the circumference. */
+  widthU: number;
+  /** Degrees. */
+  rotation: number;
+  /** Design canvas dimensions, needed to keep the pixel aspect correct. */
+  canvasW: number;
+  canvasH: number;
+}
+
+/**
+ * Convert normalised artwork into design-space shapes at a given placement.
+ *
+ * Rotation is applied in PIXEL space and converted back, because u and v are
+ * normalised over different physical distances - rotating in normalised units
+ * would shear the artwork.
+ */
+export function placeArtwork(
+  art: PlacedArtwork,
+  t: PlacementTransform,
+): DesignShape[] {
+  const wPx = t.widthU * t.canvasW;
+  const hPx = wPx * art.aspect;
+  const rad = (t.rotation * Math.PI) / 180;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
+
+  return art.shapes.map((s) => ({
+    fill: s.fill,
+    opacity: s.opacity,
+    subpaths: s.subpaths.map((sp) => sp.map((p) => {
+      // Centre the unit box, scale to pixels, rotate, then normalise.
+      const x = (p.x - 0.5) * wPx;
+      const y = (p.y - 0.5) * hPx;
+      const rx = x * cos - y * sin;
+      const ry = x * sin + y * cos;
+      return {
+        u: t.u + rx / t.canvasW,
+        // Design v points up; artwork y points down.
+        v: t.v - ry / t.canvasH,
+      };
+    })),
+  }));
+}

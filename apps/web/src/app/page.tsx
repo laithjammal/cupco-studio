@@ -1,0 +1,1040 @@
+'use client';
+
+/**
+ * Cupco Studio.
+ *
+ * One design document feeds the 2D canvas, the interactive 3D cup and the
+ * production fan, through the shared geometry engine. Nothing stores a second,
+ * separately-warped copy of the artwork.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import {
+  deriveFrustum, getProfile, provenanceIssues, isProductionReady, BUILT_IN_PROFILES,
+} from '@cupco/geometry';
+import {
+  renderDesignToCanvas, EMPTY_DESIGN, createImageElement, createTextElement,
+  createVectorElement, FONT_CHOICES, cssFamily, nextId, withQrUrl,
+  type Design, type DesignElement, type ElementId, type TextElement,
+} from '@/lib/design';
+import { useHistory } from '@/lib/useHistory';
+import { sampleColor, fillToTemplate, type EyedropTarget, type FillMode } from '@/lib/tools';
+import { preloadFonts, resolveWeight } from '@/lib/fonts';
+import {
+  encodeGif, pickVideoMime, TURNTABLE_PRESETS, VIDEO_PRESETS,
+  type CaptureTurntable, type RecordTurntable, type TurntablePresetId, type VideoPresetId,
+} from '@/lib/turntable';
+import { exportFanPdf, exportFanSvg, buildArtworkTemplateSvg } from '@/lib/exporters';
+import {
+  exportFanPdfVector, exportFanSvgVector, checkVectorEligibility, collectFills,
+} from '@/lib/vector-export';
+import {
+  isSvgFile, isPdfFile, unsupportedReason,
+  loadSvgAsset, loadRasterAsset, loadPdfAsset, traceRaster,
+} from '@/lib/upload';
+import { extractPalette, simulateCmykPrint, totalInkPct, printShift, hexToRgb, type PaletteEntry } from '@cupco/vector';
+import FanView from '@/components/FanView';
+import DesignView from '@/components/DesignView';
+import ConceptGallery from '@/components/ConceptGallery';
+import type { ConceptSource } from '@/lib/concepts-adapter';
+
+const CupViewer = dynamic(() => import('@/components/CupViewer'), {
+  ssr: false,
+  loading: () => (
+    <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: '#94a3b8' }}>Loading 3D…</div>
+  ),
+});
+
+type Tab = 'concepts' | 'design' | '3d' | 'fan';
+const EXPORT_DPIS = [300, 450, 600] as const;
+
+export default function Page() {
+  const [profileId, setProfileId] = useState('8oz-single-wall');
+  const [tab, setTab] = useState<Tab>('fan');
+  // Start with background only, so the design is vector-eligible immediately.
+  const history = useHistory<Design>({ ...EMPTY_DESIGN, elements: [] });
+  const design = history.state;
+  /** Discrete edit — one undo step. */
+  const setDesign = history.commit;
+  const [selectedId, setSelectedId] = useState<ElementId | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [spin, setSpin] = useState(false);
+  const [resetToken, setResetToken] = useState(0);
+  const [showGuides, setShowGuides] = useState(true);
+  const [exportDpi, setExportDpi] = useState<number>(600);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [inks, setInks] = useState<PaletteEntry[]>([]);
+  const [showInks, setShowInks] = useState(false);
+  const [proofCmyk, setProofCmyk] = useState(false);
+  const [eyedrop, setEyedrop] = useState<EyedropTarget | null>(null);
+  const [fontsReady, setFontsReady] = useState(false);
+  const [brandName, setBrandName] = useState('');
+  /**
+   * Internal clipboard.
+   *
+   * Deliberately not the system clipboard: elements hold live objects — parsed
+   * vector paths, decoded images, generated QR matrices — that cannot survive
+   * a round trip through text, and serialising them would silently degrade the
+   * artwork. Copying within the app keeps them intact.
+   */
+  const clipboardRef = useRef<DesignElement | null>(null);
+  const [gifPreset, setGifPreset] = useState<TurntablePresetId>('medium');
+  const [gifProgress, setGifProgress] = useState<string | null>(null);
+  const captureRef = useRef<CaptureTurntable | null>(null);
+  const recordRef = useRef<RecordTurntable | null>(null);
+  const [turntableFormat, setTurntableFormat] = useState<'video' | 'gif'>('video');
+  const [videoPreset, setVideoPreset] = useState<VideoPresetId>('standard');
+
+  const designCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const profile = useMemo(() => getProfile(profileId)!, [profileId]);
+  const geom = useMemo(() => deriveFrustum(profile.dimensions), [profile]);
+  const issues = useMemo(() => provenanceIssues(profile), [profile]);
+  const selected = design.elements.find((e) => e.id === selectedId) ?? null;
+
+  useEffect(() => {
+    const { widthPx, heightPx } = profile.designCanvas;
+    designCanvasRef.current = renderDesignToCanvas(
+      design, widthPx, heightPx, designCanvasRef.current ?? undefined, { proofCmyk },
+    );
+    setRevision((r) => r + 1);
+  }, [design, profile, proofCmyk, fontsReady]);
+
+  /* ---- element operations ------------------------------------------------ */
+
+  // Outlining text needs the font FILE, so load them all up front rather than
+  // discovering a missing one at export time.
+  useEffect(() => {
+    let alive = true;
+    preloadFonts().then(() => { if (alive) setFontsReady(true); });
+    return () => { alive = false; };
+  }, []);
+
+  /**
+   * Artwork the concept engine works from.
+   *
+   * Uses the most recent VECTOR asset: concepts reposition and rescale the
+   * mark freely, which only stays sharp if it is resolution-independent. A
+   * bitmap has to be traced first, and the empty state says so.
+   */
+  const conceptSource = useMemo<ConceptSource | null>(() => {
+    for (let i = design.elements.length - 1; i >= 0; i--) {
+      const el = design.elements[i]!;
+      if (el.type === 'vector') return { art: el.art, name: el.name };
+    }
+    return null;
+  }, [design.elements]);
+
+  const applyConcept = useCallback((next: Design, label: string) => {
+    // A discrete edit, so one undo returns to whatever was there before.
+    setDesign(next);
+    setSelectedId(null);
+    setTab('design');
+    setStatus(`Applied “${label}” — every element is editable`);
+  }, [setDesign]);
+
+  const vectorCheck = useMemo(
+    () => checkVectorEligibility(design),
+    // fontsReady participates because eligibility depends on loaded fonts.
+    [design, fontsReady], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // Rebuild the ink list when the artwork changes, but KEEP any values an
+  // operator has typed in: a re-derived palette must never silently discard a
+  // brand's exact ink specification.
+  useEffect(() => {
+    const fresh = extractPalette(collectFills(design));
+    setInks((prev) => fresh.map((f) => {
+      const kept = prev.find((p) => p.overridden && p.hex === f.hex);
+      return kept ? { ...f, cmyk: kept.cmyk, overridden: true } : f;
+    }));
+  }, [design]);
+
+  const setInkChannel = useCallback((hex: string, ch: 'c' | 'm' | 'y' | 'k', pct: number) => {
+    setInks((prev) => prev.map((p) => p.hex === hex
+      ? { ...p, overridden: true, cmyk: { ...p.cmyk, [ch]: Math.max(0, Math.min(100, pct)) / 100 } }
+      : p));
+  }, []);
+
+  /** Continuous edit (drag frame) — no history entry; see beginEdit. */
+  const patchElement = useCallback((id: ElementId, patch: Partial<DesignElement>) => {
+    history.update((d) => ({
+      ...d,
+      elements: d.elements.map((el) => (el.id === id ? { ...el, ...patch } as DesignElement : el)),
+    }));
+  }, [history]);
+
+  /** Discrete edit from a control — one history entry. */
+  const commitElement = useCallback((id: ElementId, patch: Partial<DesignElement>) => {
+    history.commit((d) => ({
+      ...d,
+      elements: d.elements.map((el) => (el.id === id ? { ...el, ...patch } as DesignElement : el)),
+    }));
+  }, [history]);
+
+  /** Called once when a drag gesture starts, so it costs one undo. */
+  const beginEdit = useCallback(() => history.begin(), [history]);
+
+  const addFiles = useCallback(async (files: FileList) => {
+    const list = Array.from(files);
+    const notes: string[] = [];
+
+    for (let i = 0; i < list.length; i++) {
+      const file = list[i]!;
+      // Stagger multiple uploads so they don't stack invisibly.
+      const u = 0.5 + ((i % 3) - 1) * 0.18;
+      const v = 0.55 - Math.floor(i / 3) * 0.2;
+      const reason = unsupportedReason(file);
+      if (reason) {
+        notes.push(`${file.name}: ${reason}`);
+        continue;
+      }
+
+      try {
+        if (isSvgFile(file)) {
+          const a = await loadSvgAsset(file);
+          if (!a.art || a.shapeCount === 0) {
+            notes.push(`${file.name}: no shapes found`);
+            continue;
+          }
+          const el = { ...createVectorElement(a.art!, file.name, false), u, v };
+          setDesign((d) => ({ ...d, elements: [...d.elements, el] }));
+          setSelectedId(el.id);
+          notes.push(`${file.name}: ${a.shapeCount} vector shapes — see the Concepts tab`);
+          setTab('concepts');
+          if (a.warnings.length) notes.push(...a.warnings.map((w) => `${file.name}: ${w}`));
+        } else {
+          // PDF and AI are rendered to a bitmap first; everything else is
+          // already one.
+          const a = isPdfFile(file) ? await loadPdfAsset(file) : await loadRasterAsset(file);
+          const el = { ...createImageElement(a.image!, file.name), u, v };
+          setDesign((d) => ({ ...d, elements: [...d.elements, el] }));
+          setSelectedId(el.id);
+          notes.push(
+            a.warnings.length
+              ? `${file.name}: ${a.warnings.join(' · ')}`
+              : `${file.name}: bitmap — trace it for vector CMYK`,
+          );
+        }
+      } catch (e) {
+        notes.push(`${file.name}: could not be read — ${(e as Error).message}`);
+      }
+    }
+    setStatus(notes.join(' · '));
+  }, []);
+
+  /** Replace a bitmap element with a traced vector version of itself. */
+  const traceElement = useCallback(async (id: ElementId) => {
+    const el = design.elements.find((e) => e.id === id);
+    if (!el || el.type !== 'image') return;
+    setBusy(true);
+    setStatus(`Tracing ${el.name}…`);
+    try {
+      const a = await traceRaster(el.image, el.name);
+      if (!a.art || a.shapeCount === 0) {
+        setStatus(a.warnings[0] ?? 'Tracing produced no shapes');
+        return;
+      }
+      setDesign((d) => ({
+        ...d,
+        elements: d.elements.map((x) => x.id === id
+          // Keep the placement the operator already chose; only the
+          // representation changes from bitmap to paths.
+          ? {
+              ...createVectorElement(a.art!, a.name, true),
+              u: x.u, v: x.v, rotation: x.rotation,
+              widthU: x.type === 'image' || x.type === 'vector' ? x.widthU : 0.25,
+            }
+          : x),
+      }));
+      setStatus(`Traced ${el.name} — ${a.shapeCount} shapes, now exports as vector CMYK`);
+      setSelectedId(null);
+      setTab('concepts');
+    } catch (e) {
+      setStatus(`Trace failed: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [design.elements]);
+
+  const removeElement = useCallback((id: ElementId) => {
+    setDesign((d) => ({ ...d, elements: d.elements.filter((e) => e.id !== id) }));
+    setSelectedId((s) => (s === id ? null : s));
+  }, [setDesign]);
+
+  const reorder = useCallback((id: ElementId, dir: -1 | 1) => {
+    setDesign((d) => {
+      const i = d.elements.findIndex((e) => e.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= d.elements.length) return d;
+      const els = [...d.elements];
+      [els[i], els[j]] = [els[j]!, els[i]!];
+      return { ...d, elements: els };
+    });
+  }, []);
+
+  /* ---- exports ----------------------------------------------------------- */
+
+  const copySelected = useCallback((cut: boolean) => {
+    const el = design.elements.find((e) => e.id === selectedId);
+    if (!el) return;
+    clipboardRef.current = el;
+    if (cut) {
+      removeElement(el.id);
+      setStatus(`Cut ${el.name}`);
+    } else {
+      setStatus(`Copied ${el.name}`);
+    }
+  }, [design.elements, selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pasteElement = useCallback(() => {
+    const src = clipboardRef.current;
+    if (!src) return;
+    // Offset the copy so it is visibly a second object rather than appearing
+    // to have done nothing, and wrap u so it stays on the cup.
+    const copy = {
+      ...src,
+      id: nextId(),
+      u: ((src.u + 0.06) % 1 + 1) % 1,
+      v: Math.max(0, Math.min(1, src.v - 0.05)),
+      name: src.name.endsWith(' copy') ? src.name : `${src.name} copy`,
+    } as DesignElement;
+    setDesign((d) => ({ ...d, elements: [...d.elements, copy] }));
+    setSelectedId(copy.id);
+    setStatus(`Pasted ${copy.name}`);
+  }, [setDesign]);
+
+  /**
+   * Keyboard shortcuts.
+   *
+   * Ignored while a text field has focus, otherwise typing "z" in the content
+   * box would undo, and backspace would delete the element being edited.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === 'z') {
+        if (typing) return; // let the field handle its own undo
+        e.preventDefault();
+        if (e.shiftKey) history.redo(); else history.undo();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'y') {
+        if (typing) return;
+        e.preventDefault();
+        history.redo();
+        return;
+      }
+      if (mod && !typing && ['c', 'x', 'v'].includes(e.key.toLowerCase())) {
+        const k = e.key.toLowerCase();
+        // Only intercept when there is something to act on, so the browser's
+        // own copy/paste still works for selected page text.
+        if ((k === 'c' || k === 'x') && !selectedId) return;
+        if (k === 'v' && !clipboardRef.current) return;
+        e.preventDefault();
+        if (k === 'c') copySelected(false);
+        else if (k === 'x') copySelected(true);
+        else pasteElement();
+        return;
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && selectedId) {
+        e.preventDefault();
+        removeElement(selectedId);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setEyedrop(null);
+        setSelectedId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // removeElement is stable; selectedId and history change with state.
+  }, [history, selectedId, copySelected, pasteElement]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Sample a colour from the visible canvas and apply it. */
+  const onEyedrop = useCallback((canvas: HTMLCanvasElement, px: number, py: number) => {
+    const hex = sampleColor(canvas, px, py);
+    if (!hex) { setStatus('Nothing to sample there'); return; }
+    if (eyedrop === 'background') {
+      setDesign((d) => ({ ...d, background: hex }));
+      setStatus(`Background set to ${hex}`);
+    } else if (eyedrop === 'text' && selectedId) {
+      commitElement(selectedId, { color: hex } as Partial<DesignElement>);
+      setStatus(`Text colour set to ${hex}`);
+    }
+    setEyedrop(null);
+  }, [eyedrop, selectedId, setDesign, commitElement]);
+
+  const onFill = useCallback((mode: FillMode) => {
+    if (!selectedId || !selected) return;
+    commitElement(selectedId, fillToTemplate(selected, profile, geom, mode));
+    setStatus(mode === 'bleed'
+      ? 'Filled to bleed — artwork runs off every edge'
+      : 'Fitted inside the safe area');
+  }, [selectedId, selected, profile, geom, commitElement]);
+
+  /** Record a 360 turntable as a video file. */
+  const exportVideo = useCallback(async () => {
+    const record = recordRef.current;
+    if (!record) { setStatus('Open the 3D Preview tab first'); return; }
+
+    const preset = VIDEO_PRESETS.find((p) => p.id === videoPreset)!;
+    const wasSpinning = spin;
+    setSpin(false);
+    setBusy(true);
+    try {
+      await new Promise((r) => setTimeout(r, 80));
+      const r = await record(preset.durationMs, preset.fps, (f) =>
+        setGifProgress(`Recording ${Math.round(f * 100)}%`));
+
+      download(r.blob, `cupco-${profile.sizeOz}oz-turntable.${r.extension}`);
+      setStatus(
+        `Turntable ${r.extension.toUpperCase()} · ${r.width}×${r.height} · ` +
+        `${(r.durationMs / 1000).toFixed(0)}s · ${(r.blob.size / 1024 / 1024).toFixed(2)} MB`,
+      );
+    } catch (e) {
+      setStatus(`Video export failed: ${(e as Error).message}`);
+    } finally {
+      setGifProgress(null);
+      setBusy(false);
+      setSpin(wasSpinning);
+    }
+  }, [videoPreset, spin, profile]);
+
+  /**
+   * Record a 360 turntable and encode it as a GIF.
+   *
+   * Spin is stopped first: the recorder steps the rotation itself, and leaving
+   * the animation running would add its motion on top, so the loop would not
+   * close cleanly.
+   */
+  const exportGif = useCallback(async () => {
+    const capture = captureRef.current;
+    if (!capture) { setStatus('Open the 3D Preview tab first'); return; }
+
+    const preset = TURNTABLE_PRESETS.find((p) => p.id === gifPreset)!;
+    const wasSpinning = spin;
+    setSpin(false);
+    setBusy(true);
+    try {
+      // Let the spin actually stop before the first frame is taken.
+      await new Promise((r) => setTimeout(r, 80));
+
+      const frames = await capture(preset.frames, preset.width, (d, t) =>
+        setGifProgress(`Rendering frame ${d}/${t}`));
+
+      const blob = await encodeGif(frames, {
+        delayMs: preset.delayMs,
+        onProgress: (d, t) => setGifProgress(`Encoding ${d}/${t}`),
+      });
+
+      download(blob, `cupco-${profile.sizeOz}oz-turntable.gif`);
+      setStatus(
+        `Turntable GIF · ${preset.frames} frames at ${frames[0]!.width}×${frames[0]!.height} · ` +
+        `${(blob.size / 1024 / 1024).toFixed(2)} MB`,
+      );
+    } catch (e) {
+      setStatus(`GIF export failed: ${(e as Error).message}`);
+    } finally {
+      setGifProgress(null);
+      setBusy(false);
+      setSpin(wasSpinning);
+    }
+  }, [gifPreset, spin, profile]);
+
+  const download = (blob: Blob, name: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 8000);
+  };
+
+  const runExport = useCallback(async (kind: 'pdf' | 'svg') => {
+    const canvas = designCanvasRef.current;
+    if (!canvas) return;
+    setBusy(true);
+    try {
+      if (vectorCheck.eligible) {
+        // True vector: resolution-independent, and carries real ink values.
+        if (kind === 'pdf') {
+          const r = await exportFanPdfVector(design, profile, geom, inks, undefined, setStatus);
+          download(r.blob, `cupco-${profile.sizeOz}oz-fan-vector-cmyk.pdf`);
+          setStatus(
+            `Exported vector CMYK PDF · ${r.pathCount} paths, ${r.pointCount.toLocaleString()} points · ` +
+            `${r.widthMm.toFixed(1)}×${r.heightMm.toFixed(1)}mm · ${(r.blob.size / 1024).toFixed(0)}KB · ${r.ms}ms`,
+          );
+        } else {
+          const r = exportFanSvgVector(design, profile, geom, inks);
+          download(r.blob, `cupco-${profile.sizeOz}oz-fan-vector.svg`);
+          setStatus(`Exported vector SVG · ${r.pathCount} paths, ${r.pointCount.toLocaleString()} points · ${(r.blob.size / 1024).toFixed(0)}KB`);
+        }
+        return;
+      }
+
+      // Something in the design cannot be vector — say which, then rasterise.
+      const why = vectorCheck.blockers.map((b) => b.name).join(', ');
+      const fn = kind === 'pdf' ? exportFanPdf : exportFanSvg;
+      const r = await fn(profile, geom, canvas, exportDpi, setStatus);
+      download(r.blob, `cupco-${profile.sizeOz}oz-fan-${exportDpi}dpi.${kind}`);
+      setStatus(
+        `Exported RGB raster ${kind.toUpperCase()} @ ${exportDpi}dpi (${r.widthPx}×${r.heightPx}px) — ` +
+        `not vector because of: ${why}`,
+      );
+    } catch (e) {
+      setStatus(`Export failed: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [profile, geom, exportDpi, design, inks, vectorCheck]);
+
+  const downloadTemplate = useCallback(() => {
+    download(
+      new Blob([buildArtworkTemplateSvg(profile)], { type: 'image/svg+xml' }),
+      `cupco-${profile.sizeOz}oz-artwork-template.svg`,
+    );
+    setStatus('Downloaded artwork template (design space, 1:1 mm)');
+  }, [profile]);
+
+  /** The design's QR code, if it has one. Surfaced without needing selection. */
+  const qrElement = design.elements.find(
+    (e): e is Extract<DesignElement, { type: 'qr' }> => e.type === 'qr',
+  );
+
+  const blocked = !isProductionReady(profile);
+  const videoExt = pickVideoMime()?.extension ?? 'video';
+
+  return (
+    <div className="app">
+      <aside className="side">
+        <h1>Cupco Studio</h1>
+        <div className="sub">Shared geometry engine</div>
+
+        <div className="btnrow" style={{ marginBottom: 14 }}>
+          <button onClick={history.undo} disabled={!history.canUndo}
+            title="Undo (⌘Z / Ctrl+Z)">↶ Undo</button>
+          <button onClick={history.redo} disabled={!history.canRedo}
+            title="Redo (⇧⌘Z / Ctrl+Y)">↷ Redo</button>
+        </div>
+
+        {blocked ? (
+          <div className="note note--err"><strong>Export blocked</strong>Placeholder dimensions — this cup would be the wrong shape.</div>
+        ) : issues.length > 0 ? (
+          <div className="note note--warn"><strong>Margins unconfirmed</strong>Safe to proof; confirm before a production run.</div>
+        ) : (
+          <div className="note note--ok"><strong>Fully confirmed</strong>Dimensions and margins both measured.</div>
+        )}
+
+        <div className="field">
+          <label htmlFor="profile">Cup size</label>
+          <select id="profile" value={profileId} onChange={(e) => setProfileId(e.target.value)}>
+            {BUILT_IN_PROFILES.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.displayName}{p.dimensionsProvenance === 'PLACEHOLDER' ? ' — placeholder' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor="art">Add artwork</label>
+          <input id="art" type="file" multiple
+            accept="image/svg+xml,image/png,image/jpeg,image/webp,application/pdf,.ai,.svg,.pdf"
+            onChange={(e) => { if (e.target.files?.length) addFiles(e.target.files); e.target.value = ''; }} />
+          <div className="hint">
+            <strong>SVG is best</strong> — it stays vector all the way to the printer.
+            PDF and AI are rendered to a bitmap; PNG and JPG arrive as bitmaps. Any bitmap
+            can be traced to vector with the ⟡ button on its layer.
+          </div>
+        </div>
+
+        <div className="field">
+          <label htmlFor="brand">Brand name <span className="hint" style={{ fontWeight: 400 }}>optional</span></label>
+          <input id="brand" type="text" value={brandName} placeholder="e.g. Cupco"
+            onChange={(e) => setBrandName(e.target.value)} />
+          <div className="hint">Used by concepts that pair the mark with type.</div>
+        </div>
+
+        {qrElement && (
+          <div className="field panel">
+            <label htmlFor="qrurl">
+              QR code address
+              {qrElement.live
+                ? <em className="badge badge--ok">live</em>
+                : <em className="badge badge--warn">placeholder</em>}
+            </label>
+            <input id="qrurl" type="text" value={qrElement.url} placeholder="cupco.com.au"
+              onChange={(e) => commitElement(qrElement.id, withQrUrl(qrElement, e.target.value))} />
+            <div className="hint">
+              {qrElement.live
+                ? `Scans to ${qrElement.url.startsWith('http') ? qrElement.url : `https://${qrElement.url}`} · ${qrElement.moduleCount}×${qrElement.moduleCount} modules`
+                : 'Type your website and the placeholder becomes a working code.'}
+            </div>
+          </div>
+        )}
+
+        <div className="field">
+          <label>Layers <span className="hint" style={{ float: 'right', fontWeight: 400 }}>top = front</span></label>
+          <ul className="layers">
+            {[...design.elements].reverse().map((el) => (
+              <li key={el.id} data-sel={el.id === selectedId} onClick={() => setSelectedId(el.id)}>
+                <span className="layers__name" title={el.name}>
+                  {el.type === 'image' ? '▣' : el.type === 'vector' ? '◆'
+                    : el.type === 'band' ? '▬' : el.type === 'qr' ? '▦' : 'T'} {el.name}
+                  {el.type === 'vector' && <em className="badge badge--ok">vector</em>}
+                  {el.type === 'image' && <em className="badge badge--warn">bitmap</em>}
+                </span>
+                <span className="layers__ops">
+                  {el.type === 'image' && (
+                    <button onClick={(e) => { e.stopPropagation(); traceElement(el.id); }}
+                      title="Trace to vector — enables true CMYK export" disabled={busy}>⟡</button>
+                  )}
+                  <button onClick={(e) => { e.stopPropagation(); reorder(el.id, 1); }} title="Bring forward">↑</button>
+                  <button onClick={(e) => { e.stopPropagation(); reorder(el.id, -1); }} title="Send back">↓</button>
+                  <button onClick={(e) => { e.stopPropagation(); removeElement(el.id); }} title="Delete">×</button>
+                </span>
+              </li>
+            ))}
+            {design.elements.length === 0 && <li className="layers__empty">No artwork yet</li>}
+          </ul>
+          <div className="btnrow" style={{ marginTop: 8 }}>
+            <button onClick={() => {
+              const el = createTextElement('CUPCO');
+              setDesign((d) => ({ ...d, elements: [...d.elements, el] }));
+              setSelectedId(el.id);
+            }}>
+              + Text
+            </button>
+          </div>
+        </div>
+
+        {selected && (
+          <div className="field panel">
+            <label>Selected — {selected.name}</label>
+            {selected.type === 'qr' ? (
+              <QrControls el={selected}
+                onUrl={(url) => commitElement(selected.id, withQrUrl(selected, url))} />
+            ) : selected.type === 'text' ? (
+              <TextControls el={selected}
+                onPatch={(p) => commitElement(selected.id, p)}
+                onPickColour={() => setEyedrop((v) => (v === 'text' ? null : 'text'))}
+                picking={eyedrop === 'text'} />
+            ) : (
+              <BlockControls el={selected} onPatch={(p) => commitElement(selected.id, p)} />
+            )}
+            <label className="txt__lbl" style={{ marginTop: 10 }}>Fill template</label>
+            <div className="btnrow">
+              <button onClick={() => onFill('bleed')} title="Cover the whole blank, running off every edge">
+                Fill to bleed
+              </button>
+              <button onClick={() => onFill('safe')} title="Fit entirely inside the safe area">
+                Fit to safe area
+              </button>
+            </div>
+            <div className="hint" style={{ marginTop: 8 }}>
+              Drag to move · corners resize · top handle rotates · ⌫ deletes.
+            </div>
+          </div>
+        )}
+
+        <div className="field">
+          <label htmlFor="bg">Background colour</label>
+          <div className="row">
+            <input id="bg" type="color" value={design.background}
+              onChange={(e) => setDesign((d) => ({ ...d, background: e.target.value }))} />
+            <span className="val">{design.background}</span>
+            <button
+              className={eyedrop === 'background' ? 'toggle toggle--on' : ''}
+              style={{ padding: '4px 8px' }}
+              title="Pick a colour from the artwork"
+              onClick={() => setEyedrop((v) => (v === 'background' ? null : 'background'))}>
+              ⌖
+            </button>
+          </div>
+          {eyedrop && <div className="hint">Click anywhere on the artwork to sample a colour · Esc cancels</div>}
+        </div>
+
+        <div className="field">
+          <label>Colour preview</label>
+          <div className="btnrow">
+            <button className={proofCmyk ? 'toggle toggle--on' : ''}
+              onClick={() => setProofCmyk((v) => !v)}>
+              {proofCmyk ? 'CMYK proof — on' : 'CMYK proof — off'}
+            </button>
+          </div>
+          <div className="hint">
+            CMYK ink covers a smaller range than a screen, so vivid colours shift on press —
+            greens and bright magentas most of all. Turn this on to preview the design as ink
+            on cup board. It is an <strong>approximation, not a colour-managed proof</strong>:
+            honest about direction and rough magnitude, but the printer&apos;s own proof is the
+            authority.
+          </div>
+        </div>
+
+        {/* Camera controls are meaningless outside the 3D tab. */}
+        {tab === '3d' && (
+          <>
+            <div className="field">
+              <label>View</label>
+              <div className="btnrow">
+                <button onClick={() => setSpin((s) => !s)}>{spin ? 'Stop spin' : 'Spin'}</button>
+                <button onClick={() => setResetToken((t) => t + 1)}>Reset camera</button>
+              </div>
+            </div>
+
+            <div className="field">
+              <label>Turntable</label>
+              <div className="btnrow" style={{ marginBottom: 8 }}>
+                <button className={turntableFormat === 'video' ? 'toggle toggle--on' : ''}
+                  onClick={() => setTurntableFormat('video')}>Video</button>
+                <button className={turntableFormat === 'gif' ? 'toggle toggle--on' : ''}
+                  onClick={() => setTurntableFormat('gif')}>GIF</button>
+              </div>
+
+              {turntableFormat === 'video' ? (
+                <>
+                  <select value={videoPreset}
+                    onChange={(e) => setVideoPreset(e.target.value as VideoPresetId)}>
+                    {VIDEO_PRESETS.map((p) => (
+                      <option key={p.id} value={p.id}>{p.label}</option>
+                    ))}
+                  </select>
+                  <div className="btnrow" style={{ marginTop: 8 }}>
+                    <button className="primary" onClick={exportVideo} disabled={busy}>
+                      {gifProgress ?? (busy ? 'Working…' : `Download ${videoExt.toUpperCase()}`)}
+                    </button>
+                  </div>
+                  <div className="hint">
+                    Full colour, plays in QuickTime, Keynote, Slack and on the web. Records a full
+                    360° from the current camera angle — position the camera first.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <select id="gif" value={gifPreset}
+                    onChange={(e) => setGifPreset(e.target.value as TurntablePresetId)}>
+                    {TURNTABLE_PRESETS.map((p) => (
+                      <option key={p.id} value={p.id}>{p.label}</option>
+                    ))}
+                  </select>
+                  <div className="btnrow" style={{ marginTop: 8 }}>
+                    <button className="primary" onClick={exportGif} disabled={busy}>
+                      {gifProgress ?? (busy ? 'Working…' : 'Download GIF')}
+                    </button>
+                  </div>
+                  <div className="hint">
+                    Limited to 256 colours, so the backdrop bands slightly.
+                    <strong> macOS Preview shows GIF frames as a list rather than playing them</strong> —
+                    open it in a browser, or press space in Finder for Quick Look.
+                  </div>
+                </>
+              )}
+            </div>
+          </>
+        )}
+
+        {tab !== '3d' && (
+          <div className="field">
+            <label>Guides</label>
+            <div className="btnrow">
+              <button onClick={() => setShowGuides((g) => !g)}>
+                {showGuides ? 'Hide guides' : 'Show guides'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="field">
+          <label>
+            Print inks (CMYK)
+            <button style={{ float: 'right', padding: '0 6px', fontSize: 11 }}
+              onClick={() => setShowInks((v) => !v)}>{showInks ? 'hide' : 'show'}</button>
+          </label>
+          <div className={`note ${vectorCheck.eligible ? 'note--ok' : 'note--warn'}`} style={{ marginBottom: 8 }}>
+            <strong>{vectorCheck.eligible ? 'Vector CMYK ready' : 'Will export as RGB raster'}</strong>
+            {vectorCheck.eligible
+              ? 'Exports as real paths with exact ink values.'
+              : vectorCheck.blockers.map((b) => `${b.name}: ${b.reason}`).join(' · ')}
+          </div>
+          {showInks && (
+            <ul className="inks">
+              {inks.map((p) => {
+                const preview = simulateCmykPrint(p.cmyk);
+                return (
+                  <li key={p.hex}>
+                    <span className="inks__sw" style={{ background: `rgb(${preview.join(',')})` }} />
+                    <span className="inks__hex">
+                      {p.hex}
+                      {p.overridden && <em className="badge badge--ok">exact</em>}
+                      <small>
+                        {totalInkPct(p.cmyk).toFixed(0)}% ink
+                        {printShift(hexToRgb(p.hex)) > 60 && ' · shifts'}
+                      </small>
+                    </span>
+                    <span className="inks__ch">
+                      {(['c', 'm', 'y', 'k'] as const).map((ch) => (
+                        <label key={ch}>
+                          {ch.toUpperCase()}
+                          <input type="number" min={0} max={100}
+                            value={Math.round(p.cmyk[ch] * 100)}
+                            onChange={(e) => setInkChannel(p.hex, ch, Number(e.target.value))} />
+                        </label>
+                      ))}
+                    </span>
+                  </li>
+                );
+              })}
+              {inks.length === 0 && <li className="layers__empty">No colours yet</li>}
+            </ul>
+          )}
+          <div className="hint">
+            Values are an unmanaged conversion — accurate enough for a digital press, but
+            <strong> type your brand&apos;s exact ink percentages</strong> for critical colours and they
+            are written to the PDF verbatim.
+          </div>
+        </div>
+
+        <div className="field">
+          <label htmlFor="dpi">Export resolution <span className="hint" style={{ fontWeight: 400 }}>(raster fallback only)</span></label>
+          <select id="dpi" value={exportDpi} onChange={(e) => setExportDpi(Number(e.target.value))}>
+            {EXPORT_DPIS.map((d) => (
+              <option key={d} value={d}>{d} dpi{d === 600 ? ' — highest' : ''}</option>
+            ))}
+          </select>
+          <div className="btnrow" style={{ marginTop: 8 }}>
+            <button className="primary" onClick={() => runExport('pdf')} disabled={busy || blocked}>
+              {busy ? 'Working…' : vectorCheck.eligible ? 'Fan PDF — vector CMYK' : 'Fan PDF — raster'}
+            </button>
+            <button onClick={() => runExport('svg')} disabled={busy || blocked}>
+              {vectorCheck.eligible ? 'Fan SVG — vector' : 'Fan SVG — raster'}
+            </button>
+          </div>
+          <div className="btnrow" style={{ marginTop: 8 }}>
+            <button onClick={downloadTemplate}>Artwork template SVG</button>
+          </div>
+          <div className="hint">
+            Both exports place artwork exactly as positioned here.
+            <strong> Not PDF/X</strong> — no output intent or embedded ICC profile, so a prepress
+            operator cannot verify it against a press condition. The colour is genuine CMYK ink.
+          </div>
+        </div>
+
+        {status && <div className="note note--ok" style={{ marginTop: 12 }}>{status}</div>}
+
+        <table className="specs">
+          <tbody>
+            <tr><td>Top Ø</td><td>{profile.dimensions.topDiameterMm} mm</td></tr>
+            <tr><td>Bottom Ø</td><td>{profile.dimensions.bottomDiameterMm} mm</td></tr>
+            <tr><td>Height</td><td>{profile.dimensions.heightMm} mm</td></tr>
+            <tr><td>Sector</td><td>{geom.sectorAngleDeg.toFixed(3)}°</td></tr>
+            <tr><td>R bottom</td><td>{geom.rBottomMm.toFixed(3)} mm</td></tr>
+            <tr><td>R top</td><td>{geom.rTopMm.toFixed(3)} mm</td></tr>
+            <tr><td>Bleed</td><td>{profile.margins.bleedMm} mm</td></tr>
+            <tr><td>Seam overlap</td><td>{profile.seam.overlapMm} mm</td></tr>
+          </tbody>
+        </table>
+      </aside>
+
+      <main className="main">
+        <nav className="tabs">
+          <button data-active={tab === 'concepts'} onClick={() => setTab('concepts')}>
+            Concepts{conceptSource ? '' : ' ·'}
+          </button>
+          <button data-active={tab === 'design'} onClick={() => setTab('design')}>Design</button>
+          <button data-active={tab === '3d'} onClick={() => setTab('3d')}>3D Preview</button>
+          <button data-active={tab === 'fan'} onClick={() => setTab('fan')}>Production Fan</button>
+        </nav>
+
+        <div className={`stage stage--${tab === '3d' ? '3d' : tab}`}>
+          {tab === 'concepts' && (
+            <ConceptGallery source={conceptSource} profile={profile}
+              brandName={brandName} onApply={applyConcept} />
+          )}
+          {tab === '3d' && (
+            <CupViewer geom={geom} profile={profile} textureSource={designCanvasRef.current}
+              revision={revision} spin={spin} resetToken={resetToken}
+              captureRef={captureRef} recordRef={recordRef} />
+          )}
+          {tab === 'fan' && (
+            <FanView profile={profile} geom={geom} design={design}
+              designCanvas={designCanvasRef.current} revision={revision}
+              showGuides={showGuides} selectedId={selectedId}
+              onSelect={setSelectedId} onChange={patchElement}
+              onBeginEdit={beginEdit}
+              eyedropActive={eyedrop !== null} onEyedrop={onEyedrop} />
+          )}
+          {tab === 'design' && (
+            <DesignView profile={profile} geom={geom} design={design} revision={revision}
+              showGuides={showGuides} selectedId={selectedId}
+              onSelect={setSelectedId} onChange={patchElement}
+              onBeginEdit={beginEdit}
+              eyedropActive={eyedrop !== null} onEyedrop={onEyedrop}
+              proofCmyk={proofCmyk} />
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/**
+ * QR properties.
+ *
+ * The code regenerates on every keystroke, so the operator sees it become
+ * scannable as they finish typing the address rather than having to guess
+ * whether it took.
+ */
+function QrControls({
+  el, onUrl,
+}: {
+  el: Extract<DesignElement, { type: 'qr' }>;
+  onUrl: (url: string) => void;
+}) {
+  return (
+    <div className="txt">
+      <label className="txt__lbl">Website address</label>
+      <input type="text" value={el.url} placeholder="cupco.com.au"
+        onChange={(e) => onUrl(e.target.value)} />
+      <div className={`note ${el.live ? 'note--ok' : 'note--warn'}`} style={{ marginTop: 8 }}>
+        <strong>{el.live ? 'Live QR code' : 'Placeholder QR code'}</strong>
+        {el.live
+          ? `Scans to ${el.url.startsWith('http') ? el.url : `https://${el.url}`}`
+          : 'Type a web address to make this scannable. It prints as a working code either way, but the placeholder points nowhere useful.'}
+      </div>
+      <div className="hint">
+        {el.moduleCount}×{el.moduleCount} modules · exports as vector, so it stays
+        sharp and scannable at any size. Keep it above roughly 20mm on the cup.
+      </div>
+    </div>
+  );
+}
+
+/** Properties for artwork and colour bands. */
+function BlockControls({
+  el, onPatch,
+}: {
+  el: Exclude<DesignElement, { type: 'text' } | { type: 'qr' }>;
+  onPatch: (patch: Partial<DesignElement>) => void;
+}) {
+  if (el.type === 'band') {
+    return (
+      <div className="txt">
+        <label className="txt__lbl">Band colour</label>
+        <input type="color" value={el.color}
+          onChange={(e) => onPatch({ color: e.target.value } as Partial<DesignElement>)} />
+        <label className="txt__lbl">Height</label>
+        <div className="row">
+          <input type="range" min={1} max={100} value={Math.round(el.heightV * 100)}
+            onChange={(e) => onPatch({ heightV: Number(e.target.value) / 100 } as Partial<DesignElement>)} />
+          <span className="val">{Math.round(el.heightV * 100)}%</span>
+        </div>
+        <div className="hint">Wraps the whole cup, so it has no seam to align.</div>
+      </div>
+    );
+  }
+  return (
+    <div className="hint">
+      {el.type === 'vector' ? 'Vector artwork' : 'Bitmap artwork'} ·{' '}
+      {(el.widthU * 100).toFixed(0)}% of circumference · {el.rotation}°
+    </div>
+  );
+}
+
+/**
+ * Text properties.
+ *
+ * Everything stays editable after the text is created — the content, the
+ * typeface, weight, slant, colour, size and letter spacing. Size is offered
+ * numerically as well as by corner drag, because typographers think in points
+ * and dragging cannot hit an exact value.
+ */
+function TextControls({
+  el, onPatch, onPickColour, picking,
+}: {
+  el: TextElement;
+  onPatch: (patch: Partial<DesignElement>) => void;
+  onPickColour?: () => void;
+  picking?: boolean;
+}) {
+  const patch = (p: Partial<TextElement>) => onPatch(p as Partial<DesignElement>);
+
+  return (
+    <div className="txt">
+      <textarea
+        className="txt__content"
+        value={el.content}
+        rows={2}
+        placeholder="Type here…"
+        onChange={(e) => patch({ content: e.target.value, name: e.target.value.trim() || 'Text' })}
+      />
+
+      <label className="txt__lbl">Font</label>
+      <select value={el.fontFamily}
+        style={{ fontFamily: cssFamily(el.fontFamily) }}
+        onChange={(e) => patch({ fontFamily: e.target.value })}>
+        {FONT_CHOICES.map((f) => (
+          <option key={f.id} value={f.id} style={{ fontFamily: `"${f.css}", sans-serif` }}>{f.label}</option>
+        ))}
+      </select>
+
+      <div className="txt__row">
+        <div className="txt__col">
+          <label className="txt__lbl">Weight</label>
+          <select value={resolveWeight(el.fontFamily, el.weight)}
+            onChange={(e) => patch({ weight: Number(e.target.value) })}>
+            {(FONT_CHOICES.find((f) => f.id === el.fontFamily)?.weights ?? [400]).map((w) => (
+              <option key={w} value={w}>{w === 400 ? 'Regular' : 'Bold'}</option>
+            ))}
+          </select>
+        </div>
+        <div className="txt__col">
+          <label className="txt__lbl">Style</label>
+          <button className={el.italic ? 'toggle toggle--on' : 'toggle'}
+            onClick={() => patch({ italic: !el.italic })}>
+            <em>Italic</em>
+          </button>
+        </div>
+      </div>
+
+      <div className="txt__row">
+        <div className="txt__col">
+          <label className="txt__lbl">Size</label>
+          <div className="row">
+            <input type="number" min={1} max={100} step={0.5}
+              value={Number((el.sizeV * 100).toFixed(1))}
+              onChange={(e) => patch({ sizeV: Math.max(0.01, Math.min(1.2, Number(e.target.value) / 100)) })} />
+            <span className="val">% of height</span>
+          </div>
+        </div>
+        <div className="txt__col">
+          <label className="txt__lbl">Colour</label>
+          <div className="row">
+            <input type="color" value={el.color}
+              onChange={(e) => patch({ color: e.target.value })} />
+            {onPickColour && (
+              <button className={picking ? 'toggle toggle--on' : ''}
+                style={{ padding: '4px 8px' }} title="Pick a colour from the artwork"
+                onClick={onPickColour}>⌖</button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <label className="txt__lbl">Letter spacing</label>
+      <div className="row">
+        <input type="range" min={-10} max={60} value={Math.round(el.tracking * 100)}
+          onChange={(e) => patch({ tracking: Number(e.target.value) / 100 })} />
+        <span className="val">{(el.tracking * 100).toFixed(0)}</span>
+      </div>
+
+      <div className="hint">
+        Outlined from the bundled font on export, so text prints as true vector CMYK.
+      </div>
+    </div>
+  );
+}

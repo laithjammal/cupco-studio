@@ -1,0 +1,12 @@
+{
+  "name": "@cupco/render",
+  "version": "0.1.0",
+  "description": "Shared rasteriser: design canvas -> production fan, via the geometry engine's inverse map",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "test": "vitest run", "typecheck": "tsc --noEmit" },
+  "dependencies": { "@cupco/geometry": "*" },
+  "devDependencies": { "typescript": "^5.7.0", "vitest": "^3.0.0" }
+}

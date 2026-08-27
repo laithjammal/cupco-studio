@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/dist/
+*.tsbuildinfo
+
+# Generated at build time by scripts/ — reproducible, not source
+apps/web/public/pdf.worker.min.mjs
+apps/web/public/fonts/
+
+# Generated artefacts (regenerate with the scripts in packages/*/scripts)
+out/
+
+# OS
+.DS_Store
+
+# Env
+.env*.local

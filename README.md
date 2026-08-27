@@ -1,0 +1,224 @@
+# Cupco Studio
+
+Customer mockup studio + internal production studio, on **one shared cup-geometry engine**.
+
+The architectural commitment: what the customer sees wrapped around the 3D cup and what the
+printer receives as a flat fan are two renderings of **one design**, through **one geometry
+engine**. There is no second, approximate mockup pipeline that could drift out of step.
+
+## Status
+
+Roughly 10,300 lines of TypeScript across five packages. **250 tests, all passing.**
+
+| Area | State | Tests |
+|---|---|---|
+| Geometry engine, real 8oz profile | ✅ | 88 |
+| Fan rasteriser | ✅ | 18 |
+| Vector: SVG import, tracing, QR, CMYK | ✅ | 62 |
+| Concept generation (10 layouts) | ✅ | 35 |
+| App: snapping, uploads | ✅ | 47 |
+| 3D cup, studio lighting, turntable MP4/GIF | ✅ | — |
+| Editing: undo, clipboard, guides, eyedropper | ✅ | — |
+| Vector CMYK PDF + SVG export | ✅ | — |
+
+### Not built
+
+The gaps, roughly in order of how much they hurt:
+
+1. **Nothing persists.** No database, no file storage, no projects. A page refresh
+   loses all work. Everything else depends on fixing this.
+2. **No preflight.** Nothing checks resolution, artwork crossing the seam, ink limits,
+   or content outside the safe area before export.
+3. **No customer-facing half.** No accounts, no roles, no simplified customer studio,
+   no lifestyle mockup gallery, no approval workflow, no Wix embed.
+4. **No server-side export worker**, so no certified PDF/X (current PDF is genuine
+   CMYK but carries no output intent or ICC profile).
+5. **12oz and 16oz are placeholders** — blocked on real measurements from Cupco.
+
+### Waiting on Cupco
+
+- 12oz and 16oz dimensions (top Ø, bottom Ø, height) — same three numbers as 8oz
+- Confirmation that the 8oz `baseAllowanceMm` estimate is right (it drives no output,
+  so this is informational only)
+- Whether the printer wants certified PDF/X, or whether CMYK vector is sufficient
+
+## Run it
+
+```bash
+npm install
+npm run dev -w @cupco/web     # http://localhost:3000
+```
+
+Three tabs: **Design** (the logical canvas), **3D Preview** (rotate/zoom/pan the real 8oz cup),
+**Production Fan** (the warped fan with trim/bleed/safe/overlap dieline, and export).
+
+## Layout
+
+```
+packages/geometry/   ★ pure TS, zero deps — CupProfile, frustum maths, coordinate mappings, path warping
+packages/render/     rasteriser: design canvas -> production fan, shared browser + Node
+packages/vector/     SVG import, raster tracing, palette extraction, RGB->CMYK
+packages/concepts/   rule-based layout strategies + contrast selection
+apps/web/            Next.js app; 3D via React Three Fiber, export via Web Worker
+```
+
+`packages/geometry` has **no runtime dependencies** on purpose: the same code runs in the browser
+for the 3D preview, in Node for export, and in the test runner. One implementation, no drift.
+
+## The 8oz cup
+
+Dimensions and every print-affecting margin are **confirmed by Cupco**. See
+[packages/geometry/README.md](packages/geometry/README.md) for the maths and the full table.
+
+```
+Dt 73.62  Db 55.00  h 90.00 (vertical)
+  -> slant 90.4803mm, sector 37.0423deg, R_bot 267.2618mm, R_top 357.7420mm
+  -> blank 239.91 x 115.70mm incl. 5mm bleed
+  -> export 2834 x 1367px @ 300dpi
+```
+
+Arc-length identity `R_top * theta = pi * Dt` closes to 2.8e-14.
+
+## What you can upload
+
+| Format | How it arrives | Can it export as vector? |
+|---|---|---|
+| **SVG** | Parsed to real paths | **Yes — lossless.** Always prefer this. |
+| PNG / JPG / WebP | Bitmap | Yes, after tracing (⟡ on the layer) |
+| PDF / AI | Rendered to a bitmap at ~2000px | Yes, after tracing — but lossy twice over |
+| EPS | Rejected with guidance | No — PostScript; needs Illustrator or Ghostscript |
+| PSD / INDD / Sketch / Figma | Rejected with guidance | No — export from the tool first |
+
+Tracing is **opt-in**, not automatic: it is excellent on flat-colour logos and poor on
+photographs, so the operator decides. A traced logo exports as genuine vector CMYK.
+
+PDF and AI are **rasterised, not vector-extracted** — pdf.js renders to a canvas and does
+not expose path geometry cleanly. Reaching vector from a PDF therefore means tracing a
+render, which is an approximation of an approximation. If the customer can send an SVG,
+that path is lossless and none of this applies.
+
+Every rejection explains what to do instead rather than saying "could not read".
+
+## Concept generation
+
+Upload a vector logo and the Concepts tab proposes ten distinct layouts:
+centred, oversized, two-tone block, ruled band, repeating, diagonal, minimal base,
+mark-on-black, mark-and-QR, and mark-with-name.
+
+**Background plates are stripped automatically.** Exported logos routinely carry a
+white rectangle behind the mark — invisible on paper, but a white box on a coloured
+cup. It is removed on upload and on every concept unless a strategy opts out.
+
+**Mark on black** additionally lightens a dark logo, so a navy or black mark does not
+vanish against the ground.
+
+**Mark and QR** places the logo centred in the left half and a QR in the right half,
+on the same line. Paste a web address into the QR's properties and the placeholder
+becomes a working code — generated as vector rectangles, so it stays sharp and
+scannable at print size.
+
+Deterministic by design — the same logo always produces the same set, seeded from
+the asset name, so a customer who reloads sees what they were shown before. Applying
+a concept produces an **ordinary editable design**: every element can be moved,
+recoloured or deleted, and one undo reverts the whole thing.
+
+Backgrounds are chosen by **measured WCAG contrast** against the artwork's dominant
+colour, not at random, so a navy logo never lands on a navy field.
+
+Strategies implement a `ConceptStrategy` interface, so an AI-backed generator can be
+added later without touching the data model.
+
+## Editing
+
+Direct manipulation on both the Design and Production Fan tabs — click to select,
+drag to move, corners resize, top handle rotates.
+
+- **⌘C / ⌘X / ⌘V** copy, cut and paste. An internal clipboard, not the system one:
+  elements hold live parsed vector paths, decoded images and QR matrices that would
+  degrade if serialised to text.
+- **Alignment guides**, two kinds, appearing only when an element is close:
+  - *Canvas guides* (pink) — centre, both thirds, the middle line. The element's
+    centre snaps to these.
+  - *Object guides* (purple) — any edge or centre of the dragged element aligning
+    to any edge or centre of another. Drawn only across the two elements involved,
+    so it is obvious which one is being matched, and labelled with what matched
+    ("Left edges aligned", "Centres aligned", "Left meets right").
+
+  Object guides win ties against canvas guides: if a logo is equally close to the
+  cup's centre line and to another logo's edge, matching the other logo is almost
+  always the intent. Hold **alt** to suspend snapping.
+- **⌘Z / ⇧⌘Z** undo and redo. A whole drag is one step.
+- **⌫** deletes the selection.
+
+## Colour proofing
+
+The CMYK proof toggle simulates ink on cup board. It models real process inks as
+transmittance filters — process cyan is roughly rgb(0,158,224), not (0,255,255) — so
+saturated screen colours come back duller, greens and bright magentas most of all.
+
+An earlier version round-tripped through the exact inverse of the RGB→CMYK formula,
+which is lossless and therefore showed no change at all. It is an approximation, not
+a colour-managed proof: honest about direction and magnitude, but the printer's proof
+is the authority.
+
+## Export
+
+Two paths, chosen automatically:
+
+| Design contains | Export | Result |
+|---|---|---|
+| only vector artwork | **true vector CMYK** | real paths, exact ink values, ~50KB |
+| any bitmap or live text | RGB raster | 300–600dpi, several MB |
+
+The UI says which will run and, when it falls back, names the element responsible. Trace a bitmap
+(⟡ on its layer) to move it into the vector path.
+
+Vector export warps paths by **adaptive subdivision with a tolerance measured in printed
+millimetres** (default 0.02mm), so accuracy is a guarantee about the physical fan, not about pixels.
+Verified: an exported PDF contains **5 CMYK fill operators and 0 RGB operators**.
+
+## Turntable export
+
+From the 3D Preview tab, records a full 360° from the current camera angle.
+
+| Format | Use it for |
+|---|---|
+| **MP4 (H.264)** — default | Anything. Full colour, plays in QuickTime, Keynote, Slack, the web. |
+| **GIF** | Embedding where video is not allowed. Limited to 256 colours, so the backdrop bands. |
+
+Video is recorded via `MediaRecorder` from the live canvas stream, so motion is smooth and the
+encoder handles compression. The GIF path steps frames by hand and quantises to a single shared
+palette sampled across the whole rotation (a per-frame palette makes flat areas shimmer as the cup
+turns).
+
+Note: **macOS Preview lists GIF frames rather than playing them.** That is a Preview quirk, not a
+broken file — use Quick Look (spacebar in Finder) or a browser. Video avoids the issue entirely.
+
+## Honest limits
+
+- **It is CMYK, but it is not PDF/X.** There is no output intent and no embedded ICC profile, so a
+  prepress operator cannot verify it against a press condition. Certifying PDF/X needs the
+  server-side Ghostscript container (M8).
+- **RGB→CMYK is unmanaged arithmetic**, not colour management — full GCR, total ink capped under
+  300%. Fine as a default for a digital press. For critical brand colours, type the exact ink
+  percentages into the ink panel and they are written to the PDF verbatim.
+- **Tracing is opt-in.** Excellent on flat-colour logos, poor on photographs, so the operator
+  decides rather than having artwork silently vectorised.
+- Gradients flatten to a solid colour and live text is skipped on SVG import — both are reported,
+  never silently dropped.
+- **12oz and 16oz carry placeholder dimensions** and are blocked from export by preflight.
+- `baseAllowanceMm` is an estimate on all profiles, but is informational and drives no output.
+- The source drawing says *"for reference, final drawing after mold finished and tested"* —
+  re-confirm with the manufacturer before a production run.
+
+## Verify
+
+```bash
+npx vitest run --root packages/geometry     # 62 tests
+npx vitest run --root packages/render       # 18 tests
+npx tsx packages/geometry/scripts/report-profile.ts 8oz-single-wall
+npx tsx packages/geometry/scripts/emit-fan-svg.ts 8oz-single-wall out/8oz-fan.svg
+npx tsx packages/render/scripts/export-check.ts
+```
+
+The decisive check is physical: print `out/8oz-fan.svg` at 100%, cut it out, wrap a real 8oz cup.
