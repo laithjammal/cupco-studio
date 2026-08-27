@@ -3,8 +3,14 @@
   --panel: #ffffff;
   --ink: #0f172a;
   --muted: #64748b;
-  --line: #e2e8f0;
+  --faint: #94a3b8;
+  --line: #e6eaef;
+  --line-soft: #eef1f5;
   --accent: #0f766e;
+  --accent-soft: #ecfdf9;
+  /* One spacing scale, so blocks stop each inventing their own margins. */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 22px;
+  --r: 7px;
   --warn: #b45309;
   --warn-bg: #fffbeb;
   --err: #b91c1c;
@@ -25,39 +31,87 @@ body {
 .side {
   background: var(--panel);
   border-right: 1px solid var(--line);
-  padding: 20px;
+  padding: 0 var(--s4) var(--s5);
   overflow-y: auto;
 }
-.side h1 { font-size: 17px; margin: 0 0 2px; letter-spacing: -0.01em; }
-.side .sub { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
 
-.field { margin-bottom: 16px; }
-.field label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+/* The one thing that must never scroll away: which project you are in. */
+.side__head {
+  position: sticky; top: 0; z-index: 3;
+  background: var(--panel); border-bottom: 1px solid var(--line-soft);
+  padding: var(--s4) 0 var(--s3);
+  display: flex; align-items: baseline; gap: var(--s2);
+}
+.side h1 { font-size: 15px; margin: 0; letter-spacing: -0.015em; }
+.side .sub { color: var(--faint); font-size: 11px; }
+.side__head .btnrow { margin-left: auto; }
+.side__head button { padding: 3px 7px; font-size: 12px; border-radius: 5px; }
+
+.field { margin-bottom: var(--s4); }
+.field:last-child { margin-bottom: 0; }
+.field label { display: block; font-size: 11.5px; font-weight: 600; margin-bottom: var(--s1); letter-spacing: .01em; }
 .field input[type="text"], .field select {
   width: 100%; padding: 7px 9px; border: 1px solid var(--line);
-  border-radius: 6px; font: inherit; background: #fff;
+  border-radius: var(--r); font: inherit; background: #fff;
+}
+.field input[type="text"]:focus, .field select:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .field input[type="range"] { width: 100%; }
 .field .row { display: flex; gap: 8px; align-items: center; }
 .field .val { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; min-width: 46px; text-align: right; }
 
 button {
-  font: inherit; padding: 8px 12px; border-radius: 6px;
+  font: inherit; padding: 7px 11px; border-radius: var(--r);
   border: 1px solid var(--line); background: #fff; cursor: pointer;
+  transition: background .12s, border-color .12s;
 }
-button:hover { background: #f8fafc; }
+button:hover:not(:disabled) { background: #f8fafc; border-color: #d7dde5; }
 button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 button.primary:hover { filter: brightness(1.08); }
 button:disabled { opacity: .5; cursor: not-allowed; }
-.btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
+.btnrow { display: flex; gap: var(--s2); flex-wrap: wrap; }
 
 .main { display: flex; flex-direction: column; min-width: 0; }
-.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); background: var(--panel); padding: 0 12px; }
+.tabs {
+  display: flex; align-items: center; gap: 2px;
+  border-bottom: 1px solid var(--line); background: var(--panel);
+  padding: 0 var(--s3); min-height: 46px;
+  /* Never wrap: a tab strip that reflows onto two lines shoves the stage down
+     and moves every control out from under the pointer. */
+  flex-wrap: nowrap;
+}
+.tabs > button { flex: none; white-space: nowrap; }
 .tabs button {
   border: none; border-bottom: 2px solid transparent; border-radius: 0;
-  background: none; padding: 12px 14px; color: var(--muted); font-weight: 600;
+  background: none; padding: 12px 13px; color: var(--muted); font-weight: 600; font-size: 13.5px;
 }
+.tabs button:hover:not(:disabled) { background: none; color: var(--ink); }
 .tabs button[data-active="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+/* View controls live with the view, not in the sidebar. */
+.stagebar {
+  display: flex; align-items: center; gap: var(--s1);
+  margin-left: auto; padding-left: var(--s3);
+  /* Scrolls rather than wrapping, for the same reason. */
+  flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+}
+.stagebar::-webkit-scrollbar { display: none; }
+.stagebar .chip { flex: none; white-space: nowrap; }
+.stagebar__sep { width: 1px; height: 18px; background: var(--line); margin: 0 var(--s1); }
+.stagebar__group { display: inline-flex; }
+.stagebar__group .chip { border-radius: 0; margin-left: -1px; }
+.stagebar__group .chip:first-child { border-radius: 5px 0 0 5px; margin-left: 0; }
+.stagebar__group .chip:last-child { border-radius: 0 5px 5px 0; }
+.chip {
+  padding: 4px 9px; font-size: 12px; border-radius: 5px;
+  border: 1px solid var(--line); background: #fff; color: var(--muted); font-weight: 600;
+}
+.chip:hover:not(:disabled) { color: var(--ink); }
+.chip--on { background: var(--accent-soft); border-color: #99e6d8; color: var(--accent); }
+.chip--primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chip--primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+.chip--select { padding: 4px 6px; font-weight: 600; }
 .stage { flex: 1; min-height: 480px; position: relative; overflow: auto; }
 .stage--3d { background: #0b1220; }
 .stage--fan, .stage--design { padding: 20px; display: flex; justify-content: center; align-items: flex-start; }
@@ -170,6 +224,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   display: block; width: 100%; text-align: left; cursor: pointer;
   margin-bottom: 0; padding: 9px 11px; font: inherit;
 }
+.preflight--clean .preflight__head { padding: 8px 11px; }
 .preflight__head strong { display: block; margin-bottom: 2px; font-size: 12.5px; }
 .preflight__counts { font-size: 11.5px; opacity: .85; }
 .preflight {
@@ -210,3 +265,50 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .qrstyle__swatch { display: block; width: 100%; height: auto; aspect-ratio: 1; border-radius: 3px; }
 .qrstyle__name { font-size: 11px; font-weight: 600; color: var(--muted); text-align: center; }
 .qrstyle[data-sel="true"] .qrstyle__name { color: var(--accent); }
+
+
+/* Collapsible sidebar sections */
+.sect { border-bottom: 1px solid var(--line); }
+.sect:last-of-type { border-bottom: none; }
+.sect__head {
+  display: flex; align-items: center; gap: var(--s2);
+  width: 100%; padding: var(--s3) 0; border: none; background: none;
+  border-radius: 0; text-align: left; font: inherit;
+}
+.sect__head:hover:not(:disabled) { background: none; }
+.sect__head:hover .sect__title { color: var(--accent); }
+/* Drawn rather than typed: the "▸" glyph renders as a near-invisible speck at
+   this size in several system fonts. */
+.sect__chev {
+  width: 0; height: 0; flex: none; margin-left: 2px;
+  border-left: 5px solid var(--faint);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform .14s ease;
+}
+.sect__head:hover .sect__chev { border-left-color: var(--accent); }
+.sect[data-open="true"] .sect__chev { transform: rotate(90deg); }
+.sect[data-open="true"] .sect__title { color: var(--ink); }
+.sect__title { font-size: 12.5px; font-weight: 700; letter-spacing: .01em; }
+.sect__summary {
+  margin-left: auto; font-size: 11px; color: var(--faint); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%;
+}
+.sect__summary[data-tone="ok"] { color: var(--ok); }
+.sect__summary[data-tone="warn"] { color: var(--warn); }
+.sect__summary[data-tone="err"] { color: var(--err); }
+.sect__body { padding-bottom: var(--s4); }
+
+/* A transient status line, over the stage rather than lost down the sidebar */
+.toast {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+  max-width: min(680px, calc(100% - 32px)); z-index: 5;
+  background: var(--ink); color: #fff; font-size: 12.5px; line-height: 1.45;
+  padding: 9px 14px; border-radius: 8px; box-shadow: 0 6px 20px rgba(15,23,42,.22);
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.toast button {
+  border: none; background: none; color: #cbd5e1; padding: 0 2px; font-size: 14px;
+  line-height: 1; border-radius: 3px;
+}
+.toast button:hover:not(:disabled) { background: rgba(255,255,255,.12); color: #fff; }

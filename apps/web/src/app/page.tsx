@@ -27,6 +27,8 @@ import { runPreflight } from '@cupco/preflight';
 import { toPreflightDesign } from '@/lib/preflight-adapter';
 import PreflightPanel from '@/components/PreflightPanel';
 import QrStylePicker from '@/components/QrStylePicker';
+import Section from '@/components/Section';
+import StageToolbar from '@/components/StageToolbar';
 import { sampleColor, fillToTemplate, type EyedropTarget, type FillMode } from '@/lib/tools';
 import { preloadFonts, resolveWeight } from '@/lib/fonts';
 import {
@@ -587,17 +589,18 @@ export default function Page() {
   return (
     <div className="app">
       <aside className="side">
-        <h1>Cupco Studio</h1>
-        <div className="sub">Shared geometry engine</div>
+        <div className="side__head">
+          <h1>Cupco Studio</h1>
+          <span className="sub">8oz</span>
+          <div className="btnrow">
+            <button onClick={history.undo} disabled={!history.canUndo}
+              title="Undo (⌘Z / Ctrl+Z)">↶</button>
+            <button onClick={history.redo} disabled={!history.canRedo}
+              title="Redo (⇧⌘Z / Ctrl+Y)">↷</button>
+          </div>
+        </div>
 
         <ProjectBar api={projects} />
-
-        <div className="btnrow" style={{ marginBottom: 14 }}>
-          <button onClick={history.undo} disabled={!history.canUndo}
-            title="Undo (⌘Z / Ctrl+Z)">↶ Undo</button>
-          <button onClick={history.redo} disabled={!history.canRedo}
-            title="Redo (⇧⌘Z / Ctrl+Y)">↷ Redo</button>
-        </div>
 
         <PreflightPanel
           report={preflight}
@@ -607,7 +610,9 @@ export default function Page() {
           }}
         />
 
-        <div className="field">
+        <Section title="Cup &amp; colour" summary={profile.displayName}
+          tone={profile.dimensionsProvenance === 'PLACEHOLDER' ? 'warn' : undefined}>
+  <div className="field">
           <label htmlFor="profile">Cup size</label>
           <select id="profile" value={profileId} onChange={(e) => setProfileId(e.target.value)}>
             {BUILT_IN_PROFILES.map((p) => (
@@ -616,55 +621,50 @@ export default function Page() {
               </option>
             ))}
           </select>
+  </div>
+        <div className="field">
+          <label htmlFor="bg">Background colour</label>
+          <div className="row">
+            <input id="bg" type="color" value={design.background}
+              onChange={(e) => setDesign((d) => ({ ...d, background: e.target.value }))} />
+            <span className="val">{design.background}</span>
+            <button
+              className={eyedrop === 'background' ? 'toggle toggle--on' : ''}
+              style={{ padding: '4px 8px' }}
+              title="Pick a colour from the artwork"
+              onClick={() => setEyedrop((v) => (v === 'background' ? null : 'background'))}>
+              ⌖
+            </button>
+          </div>
+          {eyedrop && <div className="hint">Click anywhere on the artwork to sample a colour · Esc cancels</div>}
         </div>
+        <table className="specs">
+          <tbody>
+            <tr><td>Top Ø</td><td>{profile.dimensions.topDiameterMm} mm</td></tr>
+            <tr><td>Bottom Ø</td><td>{profile.dimensions.bottomDiameterMm} mm</td></tr>
+            <tr><td>Height</td><td>{profile.dimensions.heightMm} mm</td></tr>
+            <tr><td>Sector</td><td>{geom.sectorAngleDeg.toFixed(3)}°</td></tr>
+            <tr><td>R bottom</td><td>{geom.rBottomMm.toFixed(3)} mm</td></tr>
+            <tr><td>R top</td><td>{geom.rTopMm.toFixed(3)} mm</td></tr>
+            <tr><td>Bleed</td><td>{profile.margins.bleedMm} mm</td></tr>
+            <tr><td>Seam overlap</td><td>{profile.seam.overlapMm} mm</td></tr>
+          </tbody>
+        </table>
+        </Section>
 
+        <Section title="Artwork" defaultOpen
+          summary={design.elements.length === 0 ? 'nothing yet'
+            : `${design.elements.length} layer${design.elements.length === 1 ? '' : 's'}`}>
         <div className="field">
           <label htmlFor="art">Add artwork</label>
           <input id="art" type="file" multiple
             accept="image/svg+xml,image/png,image/jpeg,image/webp,application/pdf,.ai,.svg,.pdf"
             onChange={(e) => { if (e.target.files?.length) addFiles(e.target.files); e.target.value = ''; }} />
           <div className="hint">
-            <strong>SVG is best</strong> — it stays vector all the way to the printer.
-            PDF and AI are rendered to a bitmap; PNG and JPG arrive as bitmaps. Any bitmap
-            can be traced to vector with the ⟡ button on its layer.
+            <strong>SVG is best</strong> — it stays vector to the printer. Bitmaps and
+            PDFs arrive as pixels; trace one with ⟡ on its layer to get vector back.
           </div>
         </div>
-
-        <div className="field">
-          <label htmlFor="brand">Brand name <span className="hint" style={{ fontWeight: 400 }}>optional</span></label>
-          <input id="brand" type="text" value={brandName} placeholder="e.g. Cupco"
-            onChange={(e) => setBrandName(e.target.value)} />
-          <div className="hint">Used by concepts that pair the mark with type.</div>
-        </div>
-
-        {qrElement && (
-          <div className="field panel">
-            <label htmlFor="qrurl">
-              QR code address
-              {qrElement.live
-                ? <em className="badge badge--ok">live</em>
-                : <em className="badge badge--warn">placeholder</em>}
-            </label>
-            <input id="qrurl" type="text" value={qrElement.url} placeholder="cupco.com.au"
-              onChange={(e) => commitElement(qrElement.id, withQrUrl(qrElement, e.target.value))} />
-            <div className="hint">
-              {qrElement.live
-                ? `Scans to ${qrElement.url.startsWith('http') ? qrElement.url : `https://${qrElement.url}`} · ${qrElement.moduleCount}×${qrElement.moduleCount} modules`
-                : 'Type your website and the placeholder becomes a working code.'}
-            </div>
-            <QrStylePicker
-              url={qrElement.url}
-              styleId={qrElement.styleId}
-              onChange={(id) => commitElement(qrElement.id, withQrStyle(qrElement, id))}
-            />
-            <div className="hint">
-              Every style is decoded by two independent scanners in the test suite,
-              at print size and blurred. Styling changes only how modules are drawn —
-              never what the code says.
-            </div>
-          </div>
-        )}
-
         <div className="field">
           <label>Layers <span className="hint" style={{ float: 'right', fontWeight: 400 }}>top = front</span></label>
           <ul className="layers">
@@ -699,7 +699,18 @@ export default function Page() {
             </button>
           </div>
         </div>
+        <div className="field">
+          <label htmlFor="brand">Brand name <span className="hint" style={{ fontWeight: 400 }}>optional</span></label>
+          <input id="brand" type="text" value={brandName} placeholder="e.g. Cupco"
+            onChange={(e) => setBrandName(e.target.value)} />
+          <div className="hint">Used by concepts that pair the mark with type.</div>
+        </div>
+        </Section>
 
+        <Section
+          title={selected ? `Selected — ${selected.name}` : 'Selected'}
+          openOn={selectedId}
+          summary={selected ? undefined : 'nothing selected'}>
         {selected && (
           <div className="field panel">
             <label>Selected — {selected.name}</label>
@@ -724,118 +735,51 @@ export default function Page() {
               </button>
             </div>
             <div className="hint" style={{ marginTop: 8 }}>
-              Drag to move · corners resize · top handle rotates · ⌫ deletes.
+              Drag to move · corners resize · top handle rotates · ⌫ deletes
             </div>
           </div>
         )}
-
-        <div className="field">
-          <label htmlFor="bg">Background colour</label>
-          <div className="row">
-            <input id="bg" type="color" value={design.background}
-              onChange={(e) => setDesign((d) => ({ ...d, background: e.target.value }))} />
-            <span className="val">{design.background}</span>
-            <button
-              className={eyedrop === 'background' ? 'toggle toggle--on' : ''}
-              style={{ padding: '4px 8px' }}
-              title="Pick a colour from the artwork"
-              onClick={() => setEyedrop((v) => (v === 'background' ? null : 'background'))}>
-              ⌖
-            </button>
-          </div>
-          {eyedrop && <div className="hint">Click anywhere on the artwork to sample a colour · Esc cancels</div>}
-        </div>
-
-        <div className="field">
-          <label>Colour preview</label>
-          <div className="btnrow">
-            <button className={proofCmyk ? 'toggle toggle--on' : ''}
-              onClick={() => setProofCmyk((v) => !v)}>
-              {proofCmyk ? 'CMYK proof — on' : 'CMYK proof — off'}
-            </button>
-          </div>
-          <div className="hint">
-            CMYK ink covers a smaller range than a screen, so vivid colours shift on press —
-            greens and bright magentas most of all. Turn this on to preview the design as ink
-            on cup board. It is an <strong>approximation, not a colour-managed proof</strong>:
-            honest about direction and rough magnitude, but the printer&apos;s own proof is the
-            authority.
-          </div>
-        </div>
-
-        {/* Camera controls are meaningless outside the 3D tab. */}
-        {tab === '3d' && (
-          <>
-            <div className="field">
-              <label>View</label>
-              <div className="btnrow">
-                <button onClick={() => setSpin((s) => !s)}>{spin ? 'Stop spin' : 'Spin'}</button>
-                <button onClick={() => setResetToken((t) => t + 1)}>Reset camera</button>
-              </div>
-            </div>
-
-            <div className="field">
-              <label>Turntable</label>
-              <div className="btnrow" style={{ marginBottom: 8 }}>
-                <button className={turntableFormat === 'video' ? 'toggle toggle--on' : ''}
-                  onClick={() => setTurntableFormat('video')}>Video</button>
-                <button className={turntableFormat === 'gif' ? 'toggle toggle--on' : ''}
-                  onClick={() => setTurntableFormat('gif')}>GIF</button>
-              </div>
-
-              {turntableFormat === 'video' ? (
-                <>
-                  <select value={videoPreset}
-                    onChange={(e) => setVideoPreset(e.target.value as VideoPresetId)}>
-                    {VIDEO_PRESETS.map((p) => (
-                      <option key={p.id} value={p.id}>{p.label}</option>
-                    ))}
-                  </select>
-                  <div className="btnrow" style={{ marginTop: 8 }}>
-                    <button className="primary" onClick={exportVideo} disabled={busy}>
-                      {gifProgress ?? (busy ? 'Working…' : `Download ${videoExt.toUpperCase()}`)}
-                    </button>
-                  </div>
-                  <div className="hint">
-                    Full colour, plays in QuickTime, Keynote, Slack and on the web. Records a full
-                    360° from the current camera angle — position the camera first.
-                  </div>
-                </>
-              ) : (
-                <>
-                  <select id="gif" value={gifPreset}
-                    onChange={(e) => setGifPreset(e.target.value as TurntablePresetId)}>
-                    {TURNTABLE_PRESETS.map((p) => (
-                      <option key={p.id} value={p.id}>{p.label}</option>
-                    ))}
-                  </select>
-                  <div className="btnrow" style={{ marginTop: 8 }}>
-                    <button className="primary" onClick={exportGif} disabled={busy}>
-                      {gifProgress ?? (busy ? 'Working…' : 'Download GIF')}
-                    </button>
-                  </div>
-                  <div className="hint">
-                    Limited to 256 colours, so the backdrop bands slightly.
-                    <strong> macOS Preview shows GIF frames as a list rather than playing them</strong> —
-                    open it in a browser, or press space in Finder for Quick Look.
-                  </div>
-                </>
-              )}
-            </div>
-          </>
+        {!selected && (
+          <div className="hint">Click an element on the canvas, or a layer above.</div>
         )}
+        </Section>
 
-        {tab !== '3d' && (
-          <div className="field">
-            <label>Guides</label>
-            <div className="btnrow">
-              <button onClick={() => setShowGuides((g) => !g)}>
-                {showGuides ? 'Hide guides' : 'Show guides'}
-              </button>
+        {qrElement && (
+          <Section title="QR code" defaultOpen
+            summary={qrElement.live ? 'live' : 'placeholder'}
+            tone={qrElement.live ? 'ok' : 'err'}>
+        {qrElement && (
+          <div className="field panel">
+            <label htmlFor="qrurl">
+              QR code address
+              {qrElement.live
+                ? <em className="badge badge--ok">live</em>
+                : <em className="badge badge--warn">placeholder</em>}
+            </label>
+            <input id="qrurl" type="text" value={qrElement.url} placeholder="cupco.com.au"
+              onChange={(e) => commitElement(qrElement.id, withQrUrl(qrElement, e.target.value))} />
+            <div className="hint">
+              {qrElement.live
+                ? `Scans to ${qrElement.url.startsWith('http') ? qrElement.url : `https://${qrElement.url}`} · ${qrElement.moduleCount}×${qrElement.moduleCount} modules`
+                : 'Type your website and the placeholder becomes a working code.'}
+            </div>
+            <QrStylePicker
+              url={qrElement.url}
+              styleId={qrElement.styleId}
+              onChange={(id) => commitElement(qrElement.id, withQrStyle(qrElement, id))}
+            />
+            <div className="hint">
+              Style changes the drawing, never the data. Each one is decoded by two
+              independent scanners in the tests, at print size and blurred.
             </div>
           </div>
         )}
+          </Section>
+        )}
 
+        <Section title="Print inks"
+          summary={vectorCheck.eligible ? 'Vector CMYK ready' : 'RGB raster fallback'}
+          tone={vectorCheck.eligible ? 'ok' : 'warn'}>
         <div className="field">
           <label>
             Print inks (CMYK)
@@ -880,12 +824,15 @@ export default function Page() {
             </ul>
           )}
           <div className="hint">
-            Values are an unmanaged conversion — accurate enough for a digital press, but
-            <strong> type your brand&apos;s exact ink percentages</strong> for critical colours and they
-            are written to the PDF verbatim.
+            An unmanaged conversion — fine as a default. For critical brand colours,
+            <strong> type the exact ink percentages</strong> and they go into the PDF verbatim.
           </div>
         </div>
+        </Section>
 
+        <Section title="Export" defaultOpen
+          summary={blocked ? 'blocked' : vectorCheck.eligible ? 'vector CMYK' : 'raster'}
+          tone={blocked ? 'err' : vectorCheck.eligible ? 'ok' : 'warn'}>
         <div className="field">
           <label htmlFor="dpi">Export resolution <span className="hint" style={{ fontWeight: 400 }}>(raster fallback only)</span></label>
           <select id="dpi" value={exportDpi} onChange={(e) => setExportDpi(Number(e.target.value))}>
@@ -905,26 +852,25 @@ export default function Page() {
             <button onClick={downloadTemplate}>Artwork template SVG</button>
           </div>
           <div className="hint">
-            Both exports place artwork exactly as positioned here.
-            <strong> Not PDF/X</strong> — no output intent or embedded ICC profile, so a prepress
-            operator cannot verify it against a press condition. The colour is genuine CMYK ink.
+            Genuine CMYK ink, but <strong>not PDF/X</strong> — no output intent or embedded
+            ICC profile, so prepress cannot verify it against a press condition.
           </div>
         </div>
+        </Section>
 
-        {status && <div className="note note--ok" style={{ marginTop: 12 }}>{status}</div>}
 
-        <table className="specs">
-          <tbody>
-            <tr><td>Top Ø</td><td>{profile.dimensions.topDiameterMm} mm</td></tr>
-            <tr><td>Bottom Ø</td><td>{profile.dimensions.bottomDiameterMm} mm</td></tr>
-            <tr><td>Height</td><td>{profile.dimensions.heightMm} mm</td></tr>
-            <tr><td>Sector</td><td>{geom.sectorAngleDeg.toFixed(3)}°</td></tr>
-            <tr><td>R bottom</td><td>{geom.rBottomMm.toFixed(3)} mm</td></tr>
-            <tr><td>R top</td><td>{geom.rTopMm.toFixed(3)} mm</td></tr>
-            <tr><td>Bleed</td><td>{profile.margins.bleedMm} mm</td></tr>
-            <tr><td>Seam overlap</td><td>{profile.seam.overlapMm} mm</td></tr>
-          </tbody>
-        </table>
+
+
+
+
+
+
+
+
+
+
+
+
       </aside>
 
       <main className="main">
@@ -935,6 +881,19 @@ export default function Page() {
           <button data-active={tab === 'design'} onClick={() => setTab('design')}>Design</button>
           <button data-active={tab === '3d'} onClick={() => setTab('3d')}>3D Preview</button>
           <button data-active={tab === 'fan'} onClick={() => setTab('fan')}>Production Fan</button>
+
+          <StageToolbar
+            tab={tab}
+            proofCmyk={proofCmyk} onProofCmyk={() => setProofCmyk((v) => !v)}
+            showGuides={showGuides} onShowGuides={() => setShowGuides((g) => !g)}
+            spin={spin} onSpin={() => setSpin((v) => !v)}
+            onResetCamera={() => setResetToken((t) => t + 1)}
+            turntableFormat={turntableFormat} onTurntableFormat={setTurntableFormat}
+            videoPreset={videoPreset} onVideoPreset={setVideoPreset}
+            gifPreset={gifPreset} onGifPreset={setGifPreset}
+            onExportTurntable={turntableFormat === 'video' ? exportVideo : exportGif}
+            busy={busy} progress={gifProgress} videoExt={videoExt}
+          />
         </nav>
 
         <div className={`stage stage--${tab === '3d' ? '3d' : tab}`}>
@@ -962,6 +921,13 @@ export default function Page() {
               onBeginEdit={beginEdit}
               eyedropActive={eyedrop !== null} onEyedrop={onEyedrop}
               proofCmyk={proofCmyk} />
+          )}
+
+          {status && (
+            <div className="toast" role="status">
+              <span>{status}</span>
+              <button onClick={() => setStatus(null)} title="Dismiss">×</button>
+            </div>
           )}
         </div>
       </main>

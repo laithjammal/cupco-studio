@@ -50,8 +50,15 @@ npm install
 npm run dev -w @cupco/web     # http://localhost:3000
 ```
 
-Three tabs: **Design** (the logical canvas), **3D Preview** (rotate/zoom/pan the real 8oz cup),
-**Production Fan** (the warped fan with trim/bleed/safe/overlap dieline, and export).
+Four tabs: **Concepts** (ten generated layouts), **Design** (the logical canvas),
+**3D Preview** (rotate/zoom/pan the real 8oz cup), and **Production Fan** (the warped fan
+with its trim/bleed/safe/overlap dieline, and export).
+
+The sidebar holds what you *set* — project, preflight, cup, artwork, the selected element,
+inks, export — grouped into collapsible sections whose headers stay useful when closed
+("8oz Single Wall", "3 layers", "Vector CMYK ready"). What you *look through* — guides, the
+CMYK proof, the camera and turntable — sits in the tab bar beside the view it affects,
+because it changes what is on screen rather than what gets printed.
 
 ## Layout
 

@@ -40,26 +40,37 @@ export default function PreflightPanel({
   const tone = report.errors > 0 ? 'note--err'
     : report.warnings > 0 ? 'note--warn' : 'note--ok';
 
+  const clean = report.issues.length === 0;
+
   return (
-    <div className="field">
+    <div className={`field${clean ? ' preflight--clean' : ''}`}>
       <label>Preflight</label>
 
-      <button
-        className={`preflight__head note ${tone}`}
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <strong>{headline}</strong>
-        <span className="preflight__counts">
-          {report.errors === 0 && report.warnings === 0
-            ? 'Nothing to fix'
-            : [
-                report.errors && `${report.errors} blocking`,
-                report.warnings && `${report.warnings} to check`,
-                report.infos && `${report.infos} note${report.infos === 1 ? '' : 's'}`,
-              ].filter(Boolean).join(' · ')}
-        </span>
-      </button>
+      {/* Nothing to toggle when there is nothing to show, so a clean report is a
+          plain banner. Rendering it as a disabled button would grey out the one
+          state that should look confident. */}
+      {clean ? (
+        <div className={`preflight__head note ${tone}`}>
+          <strong>{headline}</strong>
+          <span className="preflight__counts">Nothing to fix</span>
+        </div>
+      ) : (
+        <button
+          className={`preflight__head note ${tone}`}
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          title="Show or hide the details"
+        >
+          <strong>{headline}</strong>
+          <span className="preflight__counts">
+            {[
+              report.errors && `${report.errors} blocking`,
+              report.warnings && `${report.warnings} to check`,
+              report.infos && `${report.infos} note${report.infos === 1 ? '' : 's'}`,
+            ].filter(Boolean).join(' · ')}
+          </span>
+        </button>
+      )}
 
       {open && report.issues.length > 0 && (
         <ul className="preflight">
@@ -69,12 +80,9 @@ export default function PreflightPanel({
         </ul>
       )}
 
-      {open && report.issues.length === 0 && (
-        <div className="hint">
-          Dimensions confirmed, artwork inside the printable band, nothing crossing
-          the seam, resolution and ink coverage within limits.
-        </div>
-      )}
+      {/* When there is nothing to fix, the banner already says so. Repeating it
+          as a paragraph is noise the operator learns to scroll past - and then
+          scrolls past the version that DOES list problems. */}
     </div>
   );
 }
