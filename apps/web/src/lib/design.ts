@@ -31,6 +31,19 @@ interface ElementBase {
 export interface ImageElement extends ElementBase {
   type: 'image';
   image: HTMLImageElement;
+  /**
+   * Content hash of the ORIGINAL uploaded bytes, in the asset store.
+   *
+   * Carried on the element because an HTMLImageElement cannot be turned back
+   * into the file it came from: reading it out through a canvas would
+   * re-encode it, inflating a 200KB JPEG into a multi-megabyte PNG and losing
+   * the original in the process. So the reference is captured at upload, when
+   * the bytes are still in hand.
+   *
+   * Vector elements need no equivalent: their artwork IS plain data, so its
+   * hash can be computed from the element itself at save time.
+   */
+  assetId: string;
   /** Width as a fraction of the full circumference. Height follows aspect. */
   widthU: number;
 }
@@ -115,6 +128,22 @@ export interface Design {
 let idCounter = 0;
 export const nextId = (): ElementId => `el-${++idCounter}`;
 
+/**
+ * Advance the id counter past every id in `elements`.
+ *
+ * Ids are assigned from a module-level counter that restarts at zero on every
+ * page load. Opening a saved project would therefore hand the next new element
+ * an id a loaded element already holds - and since selection, hit-testing and
+ * undo all key on id, the two would become the same element. Call this
+ * immediately after loading a document, before anything new can be created.
+ */
+export function reserveIds(elements: readonly DesignElement[]): void {
+  for (const el of elements) {
+    const match = /^el-(\d+)$/.exec(el.id);
+    if (match) idCounter = Math.max(idCounter, Number(match[1]));
+  }
+}
+
 export const EMPTY_DESIGN: Design = { background: '#1c4532', elements: [] };
 
 export function createTextElement(content = 'CUPCO'): TextElement {
@@ -166,12 +195,16 @@ export function createVectorElement(art: PlacedArtwork, name: string, traced: bo
   };
 }
 
-export function createImageElement(image: HTMLImageElement, name: string): ImageElement {
+export function createImageElement(
+  image: HTMLImageElement,
+  name: string,
+  assetId: string,
+): ImageElement {
   return {
     id: nextId(), type: 'image', name,
     u: 0.5, v: 0.55, rotation: 0,
     widthU: 0.25,
-    image,
+    image, assetId,
   };
 }
 

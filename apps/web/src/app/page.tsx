@@ -19,6 +19,10 @@ import {
   type Design, type DesignElement, type ElementId, type TextElement,
 } from '@/lib/design';
 import { useHistory } from '@/lib/useHistory';
+import { useProjects } from '@/lib/useProjects';
+import { captureImageBytes } from '@/lib/serialise';
+import { getStorage } from '@/lib/idb';
+import ProjectBar from '@/components/ProjectBar';
 import { sampleColor, fillToTemplate, type EyedropTarget, type FillMode } from '@/lib/tools';
 import { preloadFonts, resolveWeight } from '@/lib/fonts';
 import {
@@ -93,6 +97,42 @@ export default function Page() {
   const geom = useMemo(() => deriveFrustum(profile.dimensions), [profile]);
   const issues = useMemo(() => provenanceIssues(profile), [profile]);
   const selected = design.elements.find((e) => e.id === selectedId) ?? null;
+
+  /* ---- persistence ------------------------------------------------------- */
+
+  /**
+   * A small preview for the project list.
+   *
+   * Rendered at 200px wide - about 1/14 of the design canvas - and encoded as
+   * JPEG, because this is written on every autosave and a full-size PNG would
+   * cost more to store than most of the artwork on the cup.
+   */
+  const makeThumbnail = useCallback((d: Design): string | null => {
+    try {
+      const { widthPx, heightPx } = profile.designCanvas;
+      const w = 200;
+      const canvas = renderDesignToCanvas(d, w, Math.round((w * heightPx) / widthPx));
+      return canvas.toDataURL('image/jpeg', 0.7);
+    } catch {
+      return null;
+    }
+  }, [profile]);
+
+  const applyLoadedDesign = useCallback((next: Design) => {
+    // reset, not commit: a design that has just been opened is not an edit to
+    // the previous one, and undo must not walk backwards into another project.
+    history.reset(next);
+    setSelectedId(null);
+  }, [history]);
+
+  const projects = useProjects({
+    design,
+    profileId,
+    applyDesign: applyLoadedDesign,
+    applyProfileId: setProfileId,
+    makeThumbnail,
+    onNotice: setStatus,
+  });
 
   useEffect(() => {
     const { widthPx, heightPx } = profile.designCanvas;
@@ -208,8 +248,14 @@ export default function Page() {
         } else {
           // PDF and AI are rendered to a bitmap first; everything else is
           // already one.
-          const a = isPdfFile(file) ? await loadPdfAsset(file) : await loadRasterAsset(file);
-          const el = { ...createImageElement(a.image!, file.name), u, v };
+          const rendered = isPdfFile(file);
+          const a = rendered ? await loadPdfAsset(file) : await loadRasterAsset(file);
+          // Capture the bytes now, while the file is still in hand. A decoded
+          // HTMLImageElement cannot be turned back into the file it came from.
+          const { bytes, contentType } = await captureImageBytes(file, a.image!, rendered);
+          const assetId = await getStorage().assets
+            .put('image', bytes, { contentType, name: file.name });
+          const el = { ...createImageElement(a.image!, file.name, assetId), u, v };
           setDesign((d) => ({ ...d, elements: [...d.elements, el] }));
           setSelectedId(el.id);
           notes.push(
@@ -514,6 +560,8 @@ export default function Page() {
       <aside className="side">
         <h1>Cupco Studio</h1>
         <div className="sub">Shared geometry engine</div>
+
+        <ProjectBar api={projects} />
 
         <div className="btnrow" style={{ marginBottom: 14 }}>
           <button onClick={history.undo} disabled={!history.canUndo}

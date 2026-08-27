@@ -8,7 +8,7 @@ engine**. There is no second, approximate mockup pipeline that could drift out o
 
 ## Status
 
-Roughly 10,300 lines of TypeScript across five packages. **250 tests, all passing.**
+Roughly 13,100 lines of TypeScript across six packages. **314 tests, all passing.**
 
 | Area | State | Tests |
 |---|---|---|
@@ -16,7 +16,8 @@ Roughly 10,300 lines of TypeScript across five packages. **250 tests, all passin
 | Fan rasteriser | ✅ | 18 |
 | Vector: SVG import, tracing, QR, CMYK | ✅ | 62 |
 | Concept generation (10 layouts) | ✅ | 35 |
-| App: snapping, uploads | ✅ | 47 |
+| Persistence: assets, migration, GC | ✅ | 46 |
+| App: serialisation, snapping, uploads | ✅ | 65 |
 | 3D cup, studio lighting, turntable MP4/GIF | ✅ | — |
 | Editing: undo, clipboard, guides, eyedropper | ✅ | — |
 | Vector CMYK PDF + SVG export | ✅ | — |
@@ -25,12 +26,13 @@ Roughly 10,300 lines of TypeScript across five packages. **250 tests, all passin
 
 The gaps, roughly in order of how much they hurt:
 
-1. **Nothing persists.** No database, no file storage, no projects. A page refresh
-   loses all work. Everything else depends on fixing this.
-2. **No preflight.** Nothing checks resolution, artwork crossing the seam, ink limits,
+1. **No preflight.** Nothing checks resolution, artwork crossing the seam, ink limits,
    or content outside the safe area before export.
-3. **No customer-facing half.** No accounts, no roles, no simplified customer studio,
+2. **No customer-facing half.** No accounts, no roles, no simplified customer studio,
    no lifestyle mockup gallery, no approval workflow, no Wix embed.
+3. **Storage is local to one browser.** Work is saved, but only on the machine and
+   browser that made it — there is no server, no sync, no sharing, and no backup.
+   Clearing site data deletes everything.
 4. **No server-side export worker**, so no certified PDF/X (current PDF is genuine
    CMYK but carries no output intent or ICC profile).
 5. **12oz and 16oz are placeholders** — blocked on real measurements from Cupco.
@@ -59,6 +61,7 @@ packages/geometry/   ★ pure TS, zero deps — CupProfile, frustum maths, coord
 packages/render/     rasteriser: design canvas -> production fan, shared browser + Node
 packages/vector/     SVG import, raster tracing, palette extraction, RGB->CMYK
 packages/concepts/   rule-based layout strategies + contrast selection
+packages/persistence/ stored-document format, content-addressed assets, storage adapters
 apps/web/            Next.js app; 3D via React Three Fiber, export via Web Worker
 ```
 
@@ -127,6 +130,57 @@ colour, not at random, so a navy logo never lands on a navy field.
 
 Strategies implement a `ConceptStrategy` interface, so an AI-backed generator can be
 added later without touching the data model.
+
+## Saving your work
+
+Work is saved automatically, about a second after you stop editing, and again if
+you switch tabs or close the window. The project name and a save state sit at the
+top of the sidebar.
+
+- **Projects** — as many as you like. Switch, duplicate or delete from **All**.
+  Duplicating is cheap: artwork is shared between copies rather than duplicated.
+- **Versions** — a permanent, named copy of the design at a moment in time. Editing
+  afterwards never changes a saved version, so it stays a true record of what was
+  shown to a customer or signed off. Restoring one replaces the working design;
+  the version itself is untouched, so nothing is used up by being restored.
+
+### What is stored, and what is rebuilt
+
+Elements in the editor hold live objects — decoded images, parsed vector paths,
+generated QR matrices — none of which survive `JSON.stringify`. So saving is a real
+translation, not a state dump, and it follows one rule:
+
+| | |
+|---|---|
+| **Derivable** → not stored | A QR code's modules are a pure function of its URL, so only the URL is written and the code is regenerated on load. A saved code can never disagree with the generator. |
+| **Expensive or lossy to re-derive** → stored as an asset | Original image bytes, kept byte for byte, and traced vector artwork. |
+
+Assets are addressed by the SHA-256 of their content, so a logo used in eight
+concepts, twenty versions and two duplicated projects is stored **once**. Orphaned
+assets are swept at startup, with a grace period so an upload that has not been
+autosaved yet is never collected out from under you.
+
+Stored artwork coordinates are rounded to six decimal places. On a 60mm logo that is
+a 60-nanometre shift — about 300× finer than the export's own 0.02mm flatness
+tolerance — and it roughly halves the stored size.
+
+Every document records the format version it was written at. A document from a
+**newer** build is refused rather than opened, because opening it would silently drop
+the fields this build does not understand and the next autosave would write the
+truncated version back over the original.
+
+### Limits
+
+- **One browser, one machine.** IndexedDB is local. There is no server, no sync, no
+  sharing between people, and no backup. Clearing site data deletes every project.
+- Storage is a share of free disk. If it runs out, the save fails loudly and says so
+  rather than failing quietly — but the remedy is manual: delete a project or a version.
+- Two tabs open on the same project will overwrite each other. There is no locking.
+
+All of this sits behind `ProjectStore` and `AssetStore` interfaces, with an in-memory
+implementation used by the tests. Moving to Postgres and object storage is an
+implementation swap rather than a rewrite — which is the reason the boundary is drawn
+there and not at the call sites.
 
 ## Editing
 
@@ -214,8 +268,9 @@ broken file — use Quick Look (spacebar in Finder) or a browser. Video avoids t
 ## Verify
 
 ```bash
-npx vitest run --root packages/geometry     # 62 tests
+npx vitest run --root packages/geometry     # 88 tests
 npx vitest run --root packages/render       # 18 tests
+npx vitest run --root packages/persistence  # 46 tests
 npx tsx packages/geometry/scripts/report-profile.ts 8oz-single-wall
 npx tsx packages/geometry/scripts/emit-fan-svg.ts 8oz-single-wall out/8oz-fan.svg
 npx tsx packages/render/scripts/export-check.ts

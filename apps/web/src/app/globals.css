@@ -152,3 +152,15 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .concepts__empty strong { display: block; color: var(--ink); font-size: 15px; margin-bottom: 8px; }
 .concepts__empty p { font-size: 13px; line-height: 1.55; }
 .stage--concepts { padding: 20px; display: block; overflow: auto; }
+
+/* Projects and versions */
+.projects { border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.projects__state { font-size: 11.5px; margin-top: 5px; font-variant-numeric: tabular-nums; }
+.projects__quota { color: var(--muted); margin-left: 4px; }
+.projects__meta { display: block; color: var(--muted); font-size: 11px; font-weight: 400; }
+.projects__thumb {
+  width: 34px; height: 14px; object-fit: cover; border-radius: 2px;
+  border: 1px solid var(--line); flex: none; background: #fff;
+}
+.projects__thumb--none { background: repeating-linear-gradient(45deg, #f1f5f9 0 4px, #e2e8f0 4px 8px); }
+.projects .layers li { align-items: center; }
