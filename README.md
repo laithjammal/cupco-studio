@@ -8,7 +8,7 @@ engine**. There is no second, approximate mockup pipeline that could drift out o
 
 ## Status
 
-Roughly 13,100 lines of TypeScript across six packages. **314 tests, all passing.**
+Roughly 14,400 lines of TypeScript across seven packages. **362 tests, all passing.**
 
 | Area | State | Tests |
 |---|---|---|
@@ -17,6 +17,7 @@ Roughly 13,100 lines of TypeScript across six packages. **314 tests, all passing
 | Vector: SVG import, tracing, QR, CMYK | ✅ | 62 |
 | Concept generation (10 layouts) | ✅ | 35 |
 | Persistence: assets, migration, GC | ✅ | 46 |
+| Preflight: 12 production rules | ✅ | 48 |
 | App: serialisation, snapping, uploads | ✅ | 65 |
 | 3D cup, studio lighting, turntable MP4/GIF | ✅ | — |
 | Editing: undo, clipboard, guides, eyedropper | ✅ | — |
@@ -26,16 +27,14 @@ Roughly 13,100 lines of TypeScript across six packages. **314 tests, all passing
 
 The gaps, roughly in order of how much they hurt:
 
-1. **No preflight.** Nothing checks resolution, artwork crossing the seam, ink limits,
-   or content outside the safe area before export.
-2. **No customer-facing half.** No accounts, no roles, no simplified customer studio,
+1. **No customer-facing half.** No accounts, no roles, no simplified customer studio,
    no lifestyle mockup gallery, no approval workflow, no Wix embed.
-3. **Storage is local to one browser.** Work is saved, but only on the machine and
+2. **Storage is local to one browser.** Work is saved, but only on the machine and
    browser that made it — there is no server, no sync, no sharing, and no backup.
    Clearing site data deletes everything.
-4. **No server-side export worker**, so no certified PDF/X (current PDF is genuine
+3. **No server-side export worker**, so no certified PDF/X (current PDF is genuine
    CMYK but carries no output intent or ICC profile).
-5. **12oz and 16oz are placeholders** — blocked on real measurements from Cupco.
+4. **12oz and 16oz are placeholders** — blocked on real measurements from Cupco.
 
 ### Waiting on Cupco
 
@@ -62,6 +61,7 @@ packages/render/     rasteriser: design canvas -> production fan, shared browser
 packages/vector/     SVG import, raster tracing, palette extraction, RGB->CMYK
 packages/concepts/   rule-based layout strategies + contrast selection
 packages/persistence/ stored-document format, content-addressed assets, storage adapters
+packages/preflight/  production validation rules — what would go wrong if this were printed
 apps/web/            Next.js app; 3D via React Three Fiber, export via Web Worker
 ```
 
@@ -215,6 +215,51 @@ which is lossless and therefore showed no change at all. It is an approximation,
 a colour-managed proof: honest about direction and magnitude, but the printer's proof
 is the authority.
 
+## Preflight
+
+Runs live on every edit and sits at the top of the sidebar. Click any issue to select
+the element it is about.
+
+Severity is a promise, not a mood:
+
+| | |
+|---|---|
+| **Error** | The printed cup would be **unsalvageable**. Blocks export. |
+| **Warning** | You may well be right — a deliberate bleed, a knowingly soft texture. Never blocks. |
+| **Info** | Worth knowing, nothing to fix. |
+
+The error list is deliberately short. A tool that blocks on judgement calls trains its
+operators to override everything, and then the one real error goes through with the rest.
+
+**Blocks export:** placeholder cup dimensions; a QR code still holding its placeholder
+address; a QR split by the glued seam.
+
+**Warns:** artwork in the rim or base curl, or inside the glue-seam margin; a logo split
+by the seam; bitmaps under 300dpi *at printed size*; total ink over 300%; text under
+1.5mm; a band stopping a hair short of the edge; unconfirmed margins; an element dragged
+off the cup; an empty design.
+
+Three of these are worth calling out because they are easy to get wrong:
+
+- **The placeholder QR is the rule most worth having.** Nothing looks wrong, the proof
+  scans perfectly, and every cup in the run points at `example.com`.
+- **Resolution is judged at printed size.** A 4000px logo is not high resolution if it
+  is printed 200mm wide.
+- **The seam gap is measured at the element's lowest corner.** Design space is angular,
+  so the same gap is physically narrower further down the taper: artwork can clear the
+  seam at the rim and foul it at the base.
+
+Every issue carries a **remedy in millimetres** — "move it down at least 3.0mm" — because
+*"outside the safe area"* tells an operator nothing they cannot already see.
+
+Preflight does no geometry of its own. Element outlines arrive from the same function that
+draws the selection box on screen, and every millimetre conversion goes through
+`@cupco/geometry`. A rule doing its own trigonometry would eventually warn about a cup
+that is not the one being edited.
+
+**Not covered:** a bitmap's ink coverage is per-pixel, so the ink rule measures flat fills
+only and says so rather than averaging.
+
 ## Export
 
 Two paths, chosen automatically:
@@ -271,6 +316,7 @@ broken file — use Quick Look (spacebar in Finder) or a browser. Video avoids t
 npx vitest run --root packages/geometry     # 88 tests
 npx vitest run --root packages/render       # 18 tests
 npx vitest run --root packages/persistence  # 46 tests
+npx vitest run --root packages/preflight    # 48 tests
 npx tsx packages/geometry/scripts/report-profile.ts 8oz-single-wall
 npx tsx packages/geometry/scripts/emit-fan-svg.ts 8oz-single-wall out/8oz-fan.svg
 npx tsx packages/render/scripts/export-check.ts

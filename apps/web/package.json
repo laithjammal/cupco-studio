@@ -15,6 +15,7 @@
     "@cupco/concepts": "*",
     "@cupco/geometry": "*",
     "@cupco/persistence": "*",
+    "@cupco/preflight": "*",
     "@cupco/render": "*",
     "@cupco/vector": "*",
     "@fontsource/bebas-neue": "^5.3.0",

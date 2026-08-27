@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
-  deriveFrustum, getProfile, provenanceIssues, isProductionReady, BUILT_IN_PROFILES,
+  deriveFrustum, getProfile, BUILT_IN_PROFILES,
 } from '@cupco/geometry';
 import {
   renderDesignToCanvas, EMPTY_DESIGN, createImageElement, createTextElement,
@@ -23,6 +23,9 @@ import { useProjects } from '@/lib/useProjects';
 import { captureImageBytes } from '@/lib/serialise';
 import { getStorage } from '@/lib/idb';
 import ProjectBar from '@/components/ProjectBar';
+import { runPreflight } from '@cupco/preflight';
+import { toPreflightDesign } from '@/lib/preflight-adapter';
+import PreflightPanel from '@/components/PreflightPanel';
 import { sampleColor, fillToTemplate, type EyedropTarget, type FillMode } from '@/lib/tools';
 import { preloadFonts, resolveWeight } from '@/lib/fonts';
 import {
@@ -93,9 +96,32 @@ export default function Page() {
 
   const designCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  /** Off-screen context used only to measure text, matching the editor's own. */
+  const measureRef = useRef<CanvasRenderingContext2D | null>(null);
+  if (typeof document !== 'undefined' && !measureRef.current) {
+    measureRef.current = document.createElement('canvas').getContext('2d');
+  }
+
   const profile = useMemo(() => getProfile(profileId)!, [profileId]);
   const geom = useMemo(() => deriveFrustum(profile.dimensions), [profile]);
-  const issues = useMemo(() => provenanceIssues(profile), [profile]);
+  /**
+   * Preflight, recomputed on every edit.
+   *
+   * Cheap enough to run live - the rules are arithmetic over a handful of
+   * elements - and running it live is what makes it useful. A check the
+   * operator has to remember to press is a check that gets skipped.
+   *
+   * `fontsReady` is a dependency because text extents change once the real
+   * font metrics load, and with them the safe-area verdict.
+   */
+  const preflight = useMemo(() => {
+    const { widthPx, heightPx } = profile.designCanvas;
+    return runPreflight(
+      toPreflightDesign(design, widthPx, heightPx, measureRef.current ?? undefined),
+      profile,
+      { geom },
+    );
+  }, [design, profile, geom, fontsReady]);
   const selected = design.elements.find((e) => e.id === selectedId) ?? null;
 
   /* ---- persistence ------------------------------------------------------- */
@@ -552,7 +578,9 @@ export default function Page() {
     (e): e is Extract<DesignElement, { type: 'qr' }> => e.type === 'qr',
   );
 
-  const blocked = !isProductionReady(profile);
+  // Export is blocked by anything preflight calls an error, which subsumes the
+  // placeholder-dimension check and adds the ones artwork can cause.
+  const blocked = !preflight.passed;
   const videoExt = pickVideoMime()?.extension ?? 'video';
 
   return (
@@ -570,13 +598,13 @@ export default function Page() {
             title="Redo (⇧⌘Z / Ctrl+Y)">↷ Redo</button>
         </div>
 
-        {blocked ? (
-          <div className="note note--err"><strong>Export blocked</strong>Placeholder dimensions — this cup would be the wrong shape.</div>
-        ) : issues.length > 0 ? (
-          <div className="note note--warn"><strong>Margins unconfirmed</strong>Safe to proof; confirm before a production run.</div>
-        ) : (
-          <div className="note note--ok"><strong>Fully confirmed</strong>Dimensions and margins both measured.</div>
-        )}
+        <PreflightPanel
+          report={preflight}
+          onSelect={(id) => {
+            setSelectedId(id);
+            if (tab === 'concepts' || tab === '3d') setTab('design');
+          }}
+        />
 
         <div className="field">
           <label htmlFor="profile">Cup size</label>
