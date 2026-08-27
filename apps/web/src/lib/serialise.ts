@@ -16,7 +16,7 @@ import {
   quantiseArt, encodeJson, decodeJson, migrateDesign, SCHEMA_VERSION,
 } from '@cupco/persistence';
 import type { AssetStore, StoredArt, StoredDesign, StoredElement } from '@cupco/persistence';
-import { buildQrArtwork, normaliseUrl } from '@cupco/vector';
+import { buildQrArtwork, getQrStyle, normaliseUrl } from '@cupco/vector';
 import type { PlacedArtwork } from '@cupco/vector';
 import type { Design, DesignElement } from './design';
 import { reserveIds } from './design';
@@ -103,8 +103,11 @@ export async function serialiseDesign(
       });
       elements.push({ ...base, type: 'vector', artId, widthU: el.widthU, traced: el.traced });
     } else if (el.type === 'qr') {
-      // Only the URL. `art`, `live` and `moduleCount` are regenerated on load.
-      elements.push({ ...base, type: 'qr', url: el.url, widthU: el.widthU });
+      // Only the URL and the style. `art`, `live` and `moduleCount` are all
+      // regenerated on load from those two.
+      elements.push({
+        ...base, type: 'qr', url: el.url, widthU: el.widthU, styleId: el.styleId,
+      });
     } else if (el.type === 'text') {
       elements.push({
         ...base, type: 'text',
@@ -171,12 +174,14 @@ export async function deserialiseDesign(
       const art = decodeJson<StoredArt>(asset.bytes) as PlacedArtwork;
       elements.push({ ...base, type: 'vector', art, widthU: el.widthU, traced: el.traced });
     } else if (el.type === 'qr') {
-      // Regenerated from the URL, by the same code that built it originally.
+      // Regenerated from the URL and style, by the same code that built it.
       const normalised = normaliseUrl(el.url);
-      const { art, moduleCount } = buildQrArtwork(normalised ?? 'https://example.com');
+      const { art, moduleCount } = buildQrArtwork(
+        normalised ?? 'https://example.com', { style: getQrStyle(el.styleId) });
       elements.push({
         ...base, type: 'qr',
         url: el.url, live: normalised !== null, art, widthU: el.widthU, moduleCount,
+        styleId: el.styleId,
       });
     } else if (el.type === 'text') {
       elements.push({

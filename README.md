@@ -8,17 +8,17 @@ engine**. There is no second, approximate mockup pipeline that could drift out o
 
 ## Status
 
-Roughly 14,400 lines of TypeScript across seven packages. **362 tests, all passing.**
+Roughly 15,300 lines of TypeScript across seven packages. **417 tests, all passing.**
 
 | Area | State | Tests |
 |---|---|---|
 | Geometry engine, real 8oz profile | ✅ | 88 |
 | Fan rasteriser | ✅ | 18 |
-| Vector: SVG import, tracing, QR, CMYK | ✅ | 62 |
+| Vector: SVG import, tracing, QR styles, CMYK | ✅ | 110 |
 | Concept generation (10 layouts) | ✅ | 35 |
-| Persistence: assets, migration, GC | ✅ | 46 |
+| Persistence: assets, migration, GC | ✅ | 51 |
 | Preflight: 12 production rules | ✅ | 48 |
-| App: serialisation, snapping, uploads | ✅ | 65 |
+| App: serialisation, snapping, uploads | ✅ | 67 |
 | 3D cup, studio lighting, turntable MP4/GIF | ✅ | — |
 | Editing: undo, clipboard, guides, eyedropper | ✅ | — |
 | Vector CMYK PDF + SVG export | ✅ | — |
@@ -117,8 +117,8 @@ vanish against the ground.
 
 **Mark and QR** places the logo centred in the left half and a QR in the right half,
 on the same line. Paste a web address into the QR's properties and the placeholder
-becomes a working code — generated as vector rectangles, so it stays sharp and
-scannable at print size.
+becomes a working code — generated as vector geometry, so it stays sharp and
+scannable at print size. See [QR styles](#qr-styles) for the six looks available.
 
 Deterministic by design — the same logo always produces the same set, seeded from
 the asset name, so a customer who reloads sees what they were shown before. Applying
@@ -181,6 +181,71 @@ All of this sits behind `ProjectStore` and `AssetStore` interfaces, with an in-m
 implementation used by the tests. Moving to Postgres and object storage is an
 implementation swap rather than a rewrite — which is the reason the boundary is drawn
 there and not at the call sites.
+
+## QR styles
+
+Six presets, picked by looking at swatches of **your own code** — a long address makes
+a denser code, and that changes how a style reads more than the choice of style does.
+
+| | |
+|---|---|
+| **Classic** | Sharp squares. Most robust, smallest file. |
+| **Dots** | Round modules, circular eyes. |
+| **Rounded** | Softened corners. Subtle. |
+| **Fluid** | Neighbouring modules join into flowing shapes. |
+| **Petal** | Round modules, leaf-shaped eyes. Most decorative. |
+| **Pebble** | Flowing modules against circular eyes. |
+
+Styling changes only how modules are **drawn** — never what the code says. Every style
+produces the identical module grid, which is asserted in the tests.
+
+### What can be stylised, and why
+
+A decoder does two things, and they tolerate very different amounts of decoration:
+
+1. **Locate** the code from the three finder patterns, by scanning for the run-length
+   ratio 1:1:3:1:1. This is the fragile part.
+2. **Read** the data by sampling each module at its **centre**. This is forgiving —
+   what happens at a module's edges barely matters.
+
+So data modules can be restyled fairly freely, while the eyes need care. The circular
+eye works because a line through the centre of concentric circles of radius 3.5, 2.5
+and 1.5 modules gives runs of exactly 1, 1, 3, 1, 1 — the ratio is preserved **exactly**,
+not approximately.
+
+Three things are not negotiable and are not exposed as options: the 4-module quiet zone,
+a light ground behind the code, and genuinely dark modules.
+
+### How the dot size was settled
+
+The airier dots this started with (86% of a module) look better and were **rejected**,
+because the two decoders disagree about them sharply:
+
+| | separated dots (86%) | tangent dots (100%) |
+|---|---|---|
+| **ZXing** — most native phone scanners | reads them, down to 70%, even blurred | reads them |
+| **jsQR** — most browser-based scanners | **reads nothing** | reads them |
+
+A customer holding a cup has no say in which decoder is inside whichever app they open,
+so the dots are full-module circles, tangent rather than separated. Still unmistakably
+round; readable by both.
+
+Worth knowing: an intermediate 95% *appears* to pass jsQR at low resolution and fails at
+high. The low-res "pass" is aliasing closing the gaps, not scannability — which is exactly
+why this was not settled by looking at one render.
+
+### Verification
+
+Every style is decoded by **both** decoders, in the test suite: at print size, at 300dpi
+(the size the preflight floor allows), at 600px where real gaps would show, and with blur
+standing in for ink spread and camera focus. All sixteen module × eye combinations are
+covered, not just the six presets, so a new preset cannot ship an unverified pairing.
+
+The suite includes a control — the plain square code, the shape that already shipped —
+and a negative case, so a pass is never vacuous. *"It looks like a QR code"* is not
+evidence that it scans.
+
+To see them all: `npx tsx packages/vector/scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg`
 
 ## Editing
 
@@ -315,8 +380,10 @@ broken file — use Quick Look (spacebar in Finder) or a browser. Video avoids t
 ```bash
 npx vitest run --root packages/geometry     # 88 tests
 npx vitest run --root packages/render       # 18 tests
-npx vitest run --root packages/persistence  # 46 tests
+npx vitest run --root packages/persistence  # 51 tests
 npx vitest run --root packages/preflight    # 48 tests
+npx vitest run --root packages/vector       # 110 tests, incl. QR decode
+npx tsx packages/vector/scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg
 npx tsx packages/geometry/scripts/report-profile.ts 8oz-single-wall
 npx tsx packages/geometry/scripts/emit-fan-svg.ts 8oz-single-wall out/8oz-fan.svg
 npx tsx packages/render/scripts/export-check.ts

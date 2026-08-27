@@ -28,7 +28,7 @@ function designWith(imageId: AssetId | null, artId: AssetId | null): StoredDesig
   }
   elements.push({
     id: 'el-3', type: 'qr', u: 0.7, v: 0.5, rotation: 0, name: 'QR',
-    url: 'https://cupco.example', widthU: 0.13,
+    url: 'https://cupco.example', widthU: 0.13, styleId: 'classic',
   });
   return { schemaVersion: SCHEMA_VERSION, background: '#fff', elements };
 }

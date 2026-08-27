@@ -4,6 +4,7 @@ import type { PlacedArtwork } from '@cupco/vector';
 import { serialiseDesign, deserialiseDesign } from '@/lib/serialise';
 import {
   createBandElement, createTextElement, createQrElement, createVectorElement, nextId,
+  withQrStyle,
 } from '@/lib/design';
 import type { Design, ImageElement } from '@/lib/design';
 
@@ -201,6 +202,29 @@ describe('QR codes', () => {
     expect(out.live).toBe(true);
     expect(out.art.shapes.length).toBe(el.art.shapes.length);
     expect(out.art).toEqual(el.art);
+  });
+
+  it('round-trips the style, and rebuilds the code in it', async () => {
+    const el = createQrElement('https://cupco.example', undefined, 'dots');
+    const { stored, design } = await roundTrip({ background: '#fff', elements: [el] });
+    // The style is stored; the artwork it produces is not.
+    expect(stored.elements[0]).toMatchObject({ type: 'qr', styleId: 'dots' });
+    expect(stored.elements[0]).not.toHaveProperty('art');
+    const out = design.elements[0]!;
+    if (out.type !== 'qr') throw new Error('expected qr');
+    expect(out.styleId).toBe('dots');
+    expect(out.art).toEqual(el.art);
+    expect(out.moduleCount).toBe(el.moduleCount);
+  });
+
+  it('a style change alters the drawing but never the data', async () => {
+    // Styling must be decoration only. A different module count would mean the
+    // code now says something different.
+    const classic = createQrElement('https://cupco.example', undefined, 'classic');
+    const dots = withQrStyle(classic, 'dots');
+    expect(dots.moduleCount).toBe(classic.moduleCount);
+    expect(dots.url).toBe(classic.url);
+    expect(dots.art).not.toEqual(classic.art);
   });
 
   it('restores a placeholder QR as a placeholder', async () => {

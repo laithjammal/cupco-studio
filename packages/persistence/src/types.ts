@@ -30,7 +30,7 @@ import type { PlacedArtwork } from '@cupco/vector';
  * satisfy. Every document carries the version it was written at, and is run
  * through the migration chain on load - see migrate.ts.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /* -------------------------------------------------------------------------- */
 /* Assets                                                                      */
@@ -108,15 +108,18 @@ export interface StoredVectorElement extends StoredBase {
 }
 
 /**
- * A QR code, stored as its URL only.
+ * A QR code, stored as its URL and style only.
  *
- * `art`, `live` and `moduleCount` are all pure functions of the URL and are
- * regenerated on load, so a stored code cannot drift from the generator.
+ * `art`, `live` and `moduleCount` are all pure functions of those two and are
+ * regenerated on load, so a stored code cannot drift from the generator - and
+ * a code saved before a style existed still opens, in the style it had.
  */
 export interface StoredQrElement extends StoredBase {
   type: 'qr';
   url: string;
   widthU: number;
+  /** A preset id from QR_STYLES. */
+  styleId: string;
 }
 
 /** Text and bands are plain data and are stored verbatim. */

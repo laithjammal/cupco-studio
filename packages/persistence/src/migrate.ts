@@ -17,14 +17,29 @@ import type { StoredDesign } from './types';
 /** A single version step: version N in, version N+1 out. */
 type Migration = (doc: Record<string, unknown>) => Record<string, unknown>;
 
-/**
- * Keyed by the version being migrated FROM.
- *
- * Empty today because version 1 is the first published shape. The chain is
- * built now rather than later so the first change is a one-line addition
- * instead of a retrofit against documents already in the wild.
- */
-const MIGRATIONS: Record<number, Migration> = {};
+/** Keyed by the version being migrated FROM. */
+const MIGRATIONS: Record<number, Migration> = {
+  /**
+   * 1 -> 2: QR codes gained a style.
+   *
+   * Everything written at version 1 predates styling, so it was drawn with
+   * plain square modules. Stamping 'classic' explicitly - rather than letting
+   * the reader fall back to a default - means an old design keeps looking
+   * exactly as it did even if the default preset ever changes.
+   */
+  1: (doc) => {
+    const elements = Array.isArray(doc['elements']) ? doc['elements'] : [];
+    return {
+      ...doc,
+      elements: elements.map((el: unknown) => {
+        const e = el as Record<string, unknown>;
+        return e['type'] === 'qr' && e['styleId'] === undefined
+          ? { ...e, styleId: 'classic' }
+          : e;
+      }),
+    };
+  },
+};
 
 export class SchemaVersionError extends Error {
   override readonly name = 'SchemaVersionError';

@@ -12,6 +12,7 @@ import type { PlacedArtwork } from '@cupco/vector';
 import {
   rgbToCmyk, simulateCmykPrint, hexToRgb, rgbToHex, buildQrArtwork, normaliseUrl,
 } from '@cupco/vector';
+import { getQrStyle } from '@cupco/vector';
 import { cssFamily, getLoadedFont, layoutText, resolveWeight } from './fonts';
 
 export type ElementId = string;
@@ -114,6 +115,8 @@ export interface QrElement extends ElementBase {
   /** Width as a fraction of the circumference. Height matches (QRs are square). */
   widthU: number;
   moduleCount: number;
+  /** A preset from QR_STYLES. Only changes how modules are DRAWN. */
+  styleId: string;
 }
 
 export type DesignElement =
@@ -158,25 +161,39 @@ export function createTextElement(content = 'CUPCO'): TextElement {
 export function createQrElement(
   url: string,
   placeholderUrl = 'https://example.com',
+  styleId = 'classic',
 ): QrElement {
   const target = normaliseUrl(url) ?? placeholderUrl;
   const live = normaliseUrl(url) !== null;
-  const { art, moduleCount } = buildQrArtwork(target);
+  const { art, moduleCount } = buildQrArtwork(target, { style: getQrStyle(styleId) });
   return {
     id: nextId(), type: 'qr', name: live ? 'QR code' : 'QR code (placeholder)',
     u: 0.75, v: 0.55, rotation: 0,
-    url, live, art, widthU: 0.13, moduleCount,
+    url, live, art, widthU: 0.13, moduleCount, styleId,
   };
 }
 
-/** Rebuild a QR element's artwork for a new URL. */
+/** Rebuild a QR element's artwork for a new URL, keeping its style. */
 export function withQrUrl(el: QrElement, url: string): QrElement {
   const normalised = normaliseUrl(url);
-  const { art, moduleCount } = buildQrArtwork(normalised ?? 'https://example.com');
+  const { art, moduleCount } = buildQrArtwork(
+    normalised ?? 'https://example.com', { style: getQrStyle(el.styleId) });
   return {
     ...el, url, live: normalised !== null, art, moduleCount,
     name: normalised ? 'QR code' : 'QR code (placeholder)',
   };
+}
+
+/**
+ * Rebuild a QR element's artwork in a different style, keeping its URL.
+ *
+ * The data is untouched - only how each module is drawn changes - so the
+ * module count and everything the code encodes stay identical.
+ */
+export function withQrStyle(el: QrElement, styleId: string): QrElement {
+  const target = normaliseUrl(el.url) ?? 'https://example.com';
+  const { art, moduleCount } = buildQrArtwork(target, { style: getQrStyle(styleId) });
+  return { ...el, styleId, art, moduleCount };
 }
 
 export function createBandElement(color = '#0f172a', v = 0.25, heightV = 0.22): BandElement {

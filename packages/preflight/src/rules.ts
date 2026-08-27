@@ -252,7 +252,17 @@ export const inkLimit: Rule = ({ design, options }) => {
 /* QR codes                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/** Smallest module that scans reliably off a printed cup, in mm. */
+/**
+ * Smallest module that scans reliably off a printed cup, in mm.
+ *
+ * Corroborated rather than assumed: @cupco/vector decodes every QR style at
+ * 200px across a 33-module code, which is this exact module size at 300dpi,
+ * using two independent decoders and with blur applied. So this floor is the
+ * size the styles were actually proven at, not a number picked for feel.
+ *
+ * It applies equally to every style. The decorative ones use full-module
+ * geometry precisely so that they do not need a larger code than a plain one.
+ */
 export const MIN_QR_MODULE_MM = 0.5;
 
 /**

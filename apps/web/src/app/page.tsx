@@ -15,7 +15,7 @@ import {
 } from '@cupco/geometry';
 import {
   renderDesignToCanvas, EMPTY_DESIGN, createImageElement, createTextElement,
-  createVectorElement, FONT_CHOICES, cssFamily, nextId, withQrUrl,
+  createVectorElement, FONT_CHOICES, cssFamily, nextId, withQrUrl, withQrStyle,
   type Design, type DesignElement, type ElementId, type TextElement,
 } from '@/lib/design';
 import { useHistory } from '@/lib/useHistory';
@@ -26,6 +26,7 @@ import ProjectBar from '@/components/ProjectBar';
 import { runPreflight } from '@cupco/preflight';
 import { toPreflightDesign } from '@/lib/preflight-adapter';
 import PreflightPanel from '@/components/PreflightPanel';
+import QrStylePicker from '@/components/QrStylePicker';
 import { sampleColor, fillToTemplate, type EyedropTarget, type FillMode } from '@/lib/tools';
 import { preloadFonts, resolveWeight } from '@/lib/fonts';
 import {
@@ -650,6 +651,16 @@ export default function Page() {
               {qrElement.live
                 ? `Scans to ${qrElement.url.startsWith('http') ? qrElement.url : `https://${qrElement.url}`} · ${qrElement.moduleCount}×${qrElement.moduleCount} modules`
                 : 'Type your website and the placeholder becomes a working code.'}
+            </div>
+            <QrStylePicker
+              url={qrElement.url}
+              styleId={qrElement.styleId}
+              onChange={(id) => commitElement(qrElement.id, withQrStyle(qrElement, id))}
+            />
+            <div className="hint">
+              Every style is decoded by two independent scanners in the test suite,
+              at print size and blurred. Styling changes only how modules are drawn —
+              never what the code says.
             </div>
           </div>
         )}
