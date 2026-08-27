@@ -12,8 +12,8 @@
  * "reset camera" button on the flat fan is just noise to read past.
  */
 
-import type { TurntablePresetId, VideoPresetId } from '@/lib/turntable';
-import { TURNTABLE_PRESETS, VIDEO_PRESETS } from '@/lib/turntable';
+import type { VideoPresetId } from '@/lib/turntable';
+import { VIDEO_PRESETS } from '@/lib/turntable';
 
 export interface StageToolbarProps {
   tab: 'concepts' | 'design' | '3d' | 'fan';
@@ -24,12 +24,8 @@ export interface StageToolbarProps {
   spin: boolean;
   onSpin: () => void;
   onResetCamera: () => void;
-  turntableFormat: 'video' | 'gif';
-  onTurntableFormat: (f: 'video' | 'gif') => void;
   videoPreset: VideoPresetId;
   onVideoPreset: (p: VideoPresetId) => void;
-  gifPreset: TurntablePresetId;
-  onGifPreset: (p: TurntablePresetId) => void;
   onExportTurntable: () => void;
   busy: boolean;
   progress: string | null;
@@ -64,28 +60,15 @@ export default function StageToolbar(p: StageToolbarProps) {
 
           <span className="stagebar__sep" />
 
-          <span className="stagebar__group">
-            <button className={p.turntableFormat === 'video' ? 'chip chip--on' : 'chip'}
-              onClick={() => p.onTurntableFormat('video')}>Video</button>
-            <button className={p.turntableFormat === 'gif' ? 'chip chip--on' : 'chip'}
-              onClick={() => p.onTurntableFormat('gif')}>GIF</button>
-          </span>
+          <select className="chip chip--select" value={p.videoPreset}
+            onChange={(e) => p.onVideoPreset(e.target.value as VideoPresetId)}
+            title="Length and frame rate of the recording">
+            {VIDEO_PRESETS.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+          </select>
 
-          {p.turntableFormat === 'video' ? (
-            <select className="chip chip--select" value={p.videoPreset}
-              onChange={(e) => p.onVideoPreset(e.target.value as VideoPresetId)}>
-              {VIDEO_PRESETS.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
-            </select>
-          ) : (
-            <select className="chip chip--select" value={p.gifPreset}
-              onChange={(e) => p.onGifPreset(e.target.value as TurntablePresetId)}>
-              {TURNTABLE_PRESETS.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
-            </select>
-          )}
-
-          <button className="chip chip--primary" onClick={p.onExportTurntable} disabled={p.busy}>
-            {p.progress ?? (p.busy ? 'Working…'
-              : `Record ${p.turntableFormat === 'video' ? p.videoExt.toUpperCase() : 'GIF'}`)}
+          <button className="chip chip--primary" onClick={p.onExportTurntable} disabled={p.busy}
+            title="Record a full 360° from the current camera angle">
+            {p.progress ?? (p.busy ? 'Working…' : `Record ${p.videoExt.toUpperCase()}`)}
           </button>
         </>
       )}

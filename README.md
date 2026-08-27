@@ -19,7 +19,7 @@ Roughly 15,300 lines of TypeScript across seven packages. **417 tests, all passi
 | Persistence: assets, migration, GC | ✅ | 51 |
 | Preflight: 12 production rules | ✅ | 48 |
 | App: serialisation, snapping, uploads | ✅ | 67 |
-| 3D cup, studio lighting, turntable MP4/GIF | ✅ | — |
+| 3D cup, graduated studio backdrop, turntable MP4 | ✅ | — |
 | Editing: undo, clipboard, guides, eyedropper | ✅ | — |
 | Vector CMYK PDF + SVG export | ✅ | — |
 
@@ -348,22 +348,31 @@ Vector export warps paths by **adaptive subdivision with a tolerance measured in
 millimetres** (default 0.02mm), so accuracy is a guarantee about the physical fan, not about pixels.
 Verified: an exported PDF contains **5 CMYK fill operators and 0 RGB operators**.
 
-## Turntable export
+## The 3D preview
 
-From the 3D Preview tab, records a full 360° from the current camera angle.
+A studio product shot, not a viewport. The lighting is a real tabletop setup — a large soft key at
+45°, a dimmer fill opposite to open the shadows without flattening the form, and a rim light behind
+to separate the cup from the ground.
 
-| Format | Use it for |
-|---|---|
-| **MP4 (H.264)** — default | Anything. Full colour, plays in QuickTime, Keynote, Slack, the web. |
-| **GIF** | Embedding where video is not allowed. Limited to 256 colours, so the backdrop bands. |
+The backdrop is **graduated**, not a flat wall. Real light falls off from wherever the softbox is
+pointed, pooling brightness behind the subject and letting the corners go down, and that falloff is
+what separates a product from its ground without an outline. A single flat grey — which is what
+this was — reads as a render precisely because nothing falls off.
 
-Video is recorded via `MediaRecorder` from the live canvas stream, so motion is smooth and the
-encoder handles compression. The GIF path steps frames by hand and quantises to a single shared
-palette sampled across the whole rotation (a per-frame palette makes flat areas shimmer as the cup
-turns).
+Two gradients do different jobs: a screen-space one behind everything, anchored to the frame so
+the vignette stays put while the camera orbits, and one mapped onto the physical curved sweep, so
+the contact shadow falls across a graded surface rather than a uniform one. The warm centre against
+cool corners is deliberate — equal-temperature greys look flat however you ramp them.
 
-Note: **macOS Preview lists GIF frames rather than playing them.** That is a Preview quirk, not a
-broken file — use Quick Look (spacebar in Finder) or a browser. Video avoids the issue entirely.
+### Turntable export
+
+**Record MP4** captures a full 360° from the current camera angle, via `MediaRecorder` on the live
+canvas stream: smooth motion, full colour, and the browser's own H.264 encoder does the
+compression. Plays in QuickTime, Keynote, Slack and every browser.
+
+There was a GIF option. It was removed — 256 colours banded the graduated backdrop badly, and
+macOS Preview lists GIF frames rather than playing them, so the format meant to be the
+"plays anywhere" fallback was the one that looked broken.
 
 ## Honest limits
 

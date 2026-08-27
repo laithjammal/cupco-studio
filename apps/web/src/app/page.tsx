@@ -32,8 +32,7 @@ import StageToolbar from '@/components/StageToolbar';
 import { sampleColor, fillToTemplate, type EyedropTarget, type FillMode } from '@/lib/tools';
 import { preloadFonts, resolveWeight } from '@/lib/fonts';
 import {
-  encodeGif, pickVideoMime, TURNTABLE_PRESETS, VIDEO_PRESETS,
-  type CaptureTurntable, type RecordTurntable, type TurntablePresetId, type VideoPresetId,
+  pickVideoMime, VIDEO_PRESETS, type RecordTurntable, type VideoPresetId,
 } from '@/lib/turntable';
 import { exportFanPdf, exportFanSvg, buildArtworkTemplateSvg } from '@/lib/exporters';
 import {
@@ -90,11 +89,8 @@ export default function Page() {
    * artwork. Copying within the app keeps them intact.
    */
   const clipboardRef = useRef<DesignElement | null>(null);
-  const [gifPreset, setGifPreset] = useState<TurntablePresetId>('medium');
-  const [gifProgress, setGifProgress] = useState<string | null>(null);
-  const captureRef = useRef<CaptureTurntable | null>(null);
+  const [recordProgress, setRecordProgress] = useState<string | null>(null);
   const recordRef = useRef<RecordTurntable | null>(null);
-  const [turntableFormat, setTurntableFormat] = useState<'video' | 'gif'>('video');
   const [videoPreset, setVideoPreset] = useState<VideoPresetId>('standard');
 
   const designCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -466,7 +462,7 @@ export default function Page() {
     try {
       await new Promise((r) => setTimeout(r, 80));
       const r = await record(preset.durationMs, preset.fps, (f) =>
-        setGifProgress(`Recording ${Math.round(f * 100)}%`));
+        setRecordProgress(`Recording ${Math.round(f * 100)}%`));
 
       download(r.blob, `cupco-${profile.sizeOz}oz-turntable.${r.extension}`);
       setStatus(
@@ -476,52 +472,12 @@ export default function Page() {
     } catch (e) {
       setStatus(`Video export failed: ${(e as Error).message}`);
     } finally {
-      setGifProgress(null);
+      setRecordProgress(null);
       setBusy(false);
       setSpin(wasSpinning);
     }
   }, [videoPreset, spin, profile]);
 
-  /**
-   * Record a 360 turntable and encode it as a GIF.
-   *
-   * Spin is stopped first: the recorder steps the rotation itself, and leaving
-   * the animation running would add its motion on top, so the loop would not
-   * close cleanly.
-   */
-  const exportGif = useCallback(async () => {
-    const capture = captureRef.current;
-    if (!capture) { setStatus('Open the 3D Preview tab first'); return; }
-
-    const preset = TURNTABLE_PRESETS.find((p) => p.id === gifPreset)!;
-    const wasSpinning = spin;
-    setSpin(false);
-    setBusy(true);
-    try {
-      // Let the spin actually stop before the first frame is taken.
-      await new Promise((r) => setTimeout(r, 80));
-
-      const frames = await capture(preset.frames, preset.width, (d, t) =>
-        setGifProgress(`Rendering frame ${d}/${t}`));
-
-      const blob = await encodeGif(frames, {
-        delayMs: preset.delayMs,
-        onProgress: (d, t) => setGifProgress(`Encoding ${d}/${t}`),
-      });
-
-      download(blob, `cupco-${profile.sizeOz}oz-turntable.gif`);
-      setStatus(
-        `Turntable GIF · ${preset.frames} frames at ${frames[0]!.width}×${frames[0]!.height} · ` +
-        `${(blob.size / 1024 / 1024).toFixed(2)} MB`,
-      );
-    } catch (e) {
-      setStatus(`GIF export failed: ${(e as Error).message}`);
-    } finally {
-      setGifProgress(null);
-      setBusy(false);
-      setSpin(wasSpinning);
-    }
-  }, [gifPreset, spin, profile]);
 
   const download = (blob: Blob, name: string) => {
     const url = URL.createObjectURL(blob);
@@ -888,11 +844,9 @@ export default function Page() {
             showGuides={showGuides} onShowGuides={() => setShowGuides((g) => !g)}
             spin={spin} onSpin={() => setSpin((v) => !v)}
             onResetCamera={() => setResetToken((t) => t + 1)}
-            turntableFormat={turntableFormat} onTurntableFormat={setTurntableFormat}
             videoPreset={videoPreset} onVideoPreset={setVideoPreset}
-            gifPreset={gifPreset} onGifPreset={setGifPreset}
-            onExportTurntable={turntableFormat === 'video' ? exportVideo : exportGif}
-            busy={busy} progress={gifProgress} videoExt={videoExt}
+            onExportTurntable={exportVideo}
+            busy={busy} progress={recordProgress} videoExt={videoExt}
           />
         </nav>
 
@@ -904,7 +858,7 @@ export default function Page() {
           {tab === '3d' && (
             <CupViewer geom={geom} profile={profile} textureSource={designCanvasRef.current}
               revision={revision} spin={spin} resetToken={resetToken}
-              captureRef={captureRef} recordRef={recordRef} />
+              recordRef={recordRef} />
           )}
           {tab === 'fan' && (
             <FanView profile={profile} geom={geom} design={design}

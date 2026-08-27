@@ -25,7 +25,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, ContactShadows, SoftShadows, Backdrop } from '@react-three/drei';
 import * as THREE from 'three';
 import type { FrustumGeometry, CupProfile } from '@cupco/geometry';
-import { pickVideoMime, type CaptureTurntable, type RecordTurntable, type TurntableFrame, type VideoResult } from '@/lib/turntable';
+import { pickVideoMime, type RecordTurntable, type VideoResult } from '@/lib/turntable';
 
 interface CupMeshProps {
   groupRef: MutableRefObject<THREE.Group | null>;
@@ -158,7 +158,6 @@ function CupMesh({ groupRef, geom, profile, textureSource, revision, spin }: Cup
 
 export interface CupViewerProps {
   /** Populated with a capture function so the page can record a turntable. */
-  captureRef?: MutableRefObject<CaptureTurntable | null>;
   /** Populated with a video recorder for the same turntable. */
   recordRef?: MutableRefObject<RecordTurntable | null>;
   geom: FrustumGeometry;
@@ -184,6 +183,99 @@ function CameraRig({ geom, resetToken }: { geom: FrustumGeometry; resetToken: nu
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* Studio backdrop                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The graduated backdrop, built as two canvas textures.
+ *
+ * A real product shot is almost never lit against a flat wall. Light falls off
+ * from wherever the softbox is pointed, which pools brightness behind the
+ * subject and lets the corners go down - and that falloff is what separates
+ * the product from the ground without an outline. A single flat grey, which is
+ * what this was, reads as a render precisely because nothing falls off.
+ *
+ * Two textures, because they do different jobs:
+ *
+ *   background - screen-space, behind everything. Anchored to the FRAME rather
+ *                than the world, so the vignette stays put while the camera
+ *                orbits, exactly as a real backdrop gradient would.
+ *   sweep      - mapped onto the physical curved sweep that catches the
+ *                contact shadow, so the shadow falls across a graded surface
+ *                instead of a uniform one.
+ *
+ * The warm centre against cool corners is deliberate. Equal-temperature greys
+ * look flat however you ramp them; a little colour contrast is most of what
+ * makes a studio shot feel lit rather than filled.
+ */
+function makeGradient(
+  stops: [number, string][],
+  cx: number,
+  cy: number,
+  size = 512,
+): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const g = ctx.createRadialGradient(
+    size * cx, size * cy, 0,
+    size * cx, size * cy, size * 0.78,
+  );
+  for (const [at, colour] of stops) g.addColorStop(at, colour);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  // Without this the gradient is treated as linear data and comes out muddy.
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/**
+ * Deepest tone in the gradient — fog and the CSS ground are matched to it.
+ *
+ * Kept a true neutral-cool rather than the warmer taupe a paper cup would
+ * flatter: brand colours land on this backdrop unpredictably, and a warm ground
+ * fights any teal or green in the artwork.
+ */
+const EDGE = '#8ca0b8';
+
+function useStudioTextures() {
+  return useMemo(() => {
+    const background = makeGradient([
+      [0, '#fcfbf9'],   // warm pool of light, just above the cup
+      [0.38, '#dde5ee'],
+      [1, EDGE],        // cool falloff into the corners
+    ], 0.5, 0.38);
+
+    const sweep = makeGradient([
+      [0, '#ffffff'],
+      [0.5, '#eaeff5'],
+      [1, '#c4cfdc'],
+    ], 0.5, 0.62);
+
+    return { background, sweep };
+  }, []);
+}
+
+/**
+ * Apply a texture as the scene background.
+ *
+ * Restores whatever was there on unmount: the recorder renders this same scene,
+ * and leaving a stale background behind would show up in the video.
+ */
+function SceneBackground({ texture }: { texture: THREE.Texture }) {
+  const { scene } = useThree();
+  useEffect(() => {
+    const previous = scene.background;
+    scene.background = texture;
+    return () => { scene.background = previous; };
+  }, [scene, texture]);
+  return null;
+}
+
 /**
  * Product-photography lighting.
  *
@@ -193,7 +285,7 @@ function CameraRig({ geom, resetToken }: { geom: FrustumGeometry; resetToken: nu
  * backdrop. The seamless white sweep behind removes the horizon line, which is
  * what makes a studio shot read as a studio shot.
  */
-function StudioRig({ geom }: { geom: FrustumGeometry }) {
+function StudioRig({ geom, sweep }: { geom: FrustumGeometry; sweep: THREE.Texture }) {
   const h = geom.heightMm;
   return (
     <>
@@ -205,7 +297,7 @@ function StudioRig({ geom }: { geom: FrustumGeometry }) {
         position={[0, -h / 2 - 0.5, -h * 1.6]}
         receiveShadow
       >
-        <meshStandardMaterial color="#eef1f5" roughness={0.95} metalness={0} />
+        <meshStandardMaterial map={sweep} roughness={0.95} metalness={0} />
       </Backdrop>
 
       <ambientLight intensity={0.55} />
@@ -257,22 +349,22 @@ function StudioRig({ geom }: { geom: FrustumGeometry }) {
  * This relies on the canvas being created with preserveDrawingBuffer, without
  * which reading back after a render returns an empty buffer.
  */
-function CaptureRig({
-  groupRef, captureRef, recordRef,
+function RecordRig({
+  groupRef, recordRef,
 }: {
   groupRef: MutableRefObject<THREE.Group | null>;
-  captureRef?: MutableRefObject<CaptureTurntable | null>;
   recordRef?: MutableRefObject<RecordTurntable | null>;
 }) {
-  const { gl, scene, camera } = useThree();
+  const { gl } = useThree();
 
   /**
    * Record the turntable as a video.
    *
-   * Unlike the GIF path this does NOT step frames by hand: MediaRecorder pulls
-   * from the canvas stream at a fixed rate while the cup is animated normally,
-   * so motion is smooth and the encoder does the work. It also sidesteps GIF's
-   * 256-colour limit entirely - no banding on the studio gradient.
+   * Frames are NOT stepped by hand: MediaRecorder pulls from the canvas stream
+   * at a fixed rate while the cup animates normally, so motion is smooth and
+   * the browser's encoder does the compression. Full colour too, which the
+   * graduated backdrop needs - it was the first thing to band on the
+   * 256-colour GIF path this replaced.
    */
   useEffect(() => {
     if (!recordRef) return;
@@ -336,60 +428,13 @@ function CaptureRig({
     return () => { recordRef.current = null; };
   }, [gl, groupRef, recordRef]);
 
-  useEffect(() => {
-    if (!captureRef) return;
-
-    captureRef.current = async (frames, maxWidth, onProgress) => {
-      const group = groupRef.current;
-      if (!group) throw new Error('cup not ready');
-
-      const src = gl.domElement;
-      const scale = Math.min(1, maxWidth / src.width);
-      // Even dimensions keep the GIF quantiser and most players happy.
-      const w = Math.max(2, Math.round((src.width * scale) / 2) * 2);
-      const h = Math.max(2, Math.round((src.height * scale) / 2) * 2);
-
-      const scratch = document.createElement('canvas');
-      scratch.width = w; scratch.height = h;
-      const ctx = scratch.getContext('2d', { willReadFrequently: true });
-      if (!ctx) throw new Error('2D context unavailable');
-
-      const startRotation = group.rotation.y;
-      const out: TurntableFrame[] = [];
-
-      try {
-        for (let i = 0; i < frames; i++) {
-          group.rotation.y = startRotation + (i / frames) * Math.PI * 2;
-          group.updateMatrixWorld(true);
-          gl.render(scene, camera);
-
-          // GIF has no alpha blending worth relying on, so flatten onto the
-          // studio background rather than shipping fringed edges.
-          ctx.fillStyle = '#e8ecf1';
-          ctx.fillRect(0, 0, w, h);
-          ctx.drawImage(src, 0, 0, w, h);
-          out.push({ data: ctx.getImageData(0, 0, w, h).data, width: w, height: h });
-
-          onProgress?.(i + 1, frames);
-          if (i % 3 === 2) await new Promise((r) => setTimeout(r, 0));
-        }
-      } finally {
-        // Always restore, even if a frame throws.
-        group.rotation.y = startRotation;
-        group.updateMatrixWorld(true);
-        gl.render(scene, camera);
-      }
-      return out;
-    };
-
-    return () => { captureRef.current = null; };
-  }, [gl, scene, camera, groupRef, captureRef]);
 
   return null;
 }
 
 export default function CupViewer(props: CupViewerProps) {
   const { geom } = props;
+  const studio = useStudioTextures();
   const groupRef = useRef<THREE.Group | null>(null);
   // Pulled back further than a bare product view: a studio shot needs the
   // sweep visible around the subject, not the subject filling the frame.
@@ -404,12 +449,15 @@ export default function CupViewer(props: CupViewerProps) {
       {/* Percentage-closer soft shadows: contact stays tight, the penumbra
           spreads with distance, as a real softbox behaves. */}
       <SoftShadows size={26} samples={12} focus={0.9} />
-      <color attach="background" args={['#e8ecf1']} />
-      <fog attach="fog" args={['#e8ecf1', geom.heightMm * 4, geom.heightMm * 11]} />
 
-      <StudioRig geom={geom} />
+      <SceneBackground texture={studio.background} />
+      {/* Fog matched to the gradient's deepest tone, so distance falls into the
+          backdrop instead of standing off it. */}
+      <fog attach="fog" args={[EDGE, geom.heightMm * 4, geom.heightMm * 12]} />
+
+      <StudioRig geom={geom} sweep={studio.sweep} />
       <CupMesh {...props} groupRef={groupRef} />
-      <CaptureRig groupRef={groupRef} captureRef={props.captureRef} recordRef={props.recordRef} />
+      <RecordRig groupRef={groupRef} recordRef={props.recordRef} />
 
       <ContactShadows
         position={[0, -geom.heightMm / 2 - 0.4, 0]}

@@ -113,7 +113,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .chip--primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
 .chip--select { padding: 4px 6px; font-weight: 600; }
 .stage { flex: 1; min-height: 480px; position: relative; overflow: auto; }
-.stage--3d { background: #0b1220; }
+/* Matched to the deepest tone of the 3D gradient, so any letterboxing around
+   the canvas reads as part of the studio rather than a hole behind it. */
+.stage--3d { background: #8ca0b8; }
 .stage--fan, .stage--design { padding: 20px; display: flex; justify-content: center; align-items: flex-start; }
 
 .fanview { width: 100%; }
