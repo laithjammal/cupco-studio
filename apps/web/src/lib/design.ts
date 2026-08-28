@@ -409,6 +409,17 @@ export interface RenderOptions {
    * always uses the real values.
    */
   proofCmyk?: boolean;
+  /**
+   * Leave the background transparent and draw only the artwork.
+   *
+   * For a photo mockup the cup's own paper IS the background: it is right
+   * there in the photograph, with its real shading and texture. Painting the
+   * design's background over it puts a flat panel on the cup with a visible
+   * edge - the artwork stops reading as printed and starts reading as a
+   * sticker. So the plate compositor asks for artwork only, unless the design
+   * genuinely calls for a coloured cup.
+   */
+  transparentBackground?: boolean;
 }
 
 /**
@@ -432,8 +443,10 @@ export function renderDesign(
   const paint = (hex: string) => (options.proofCmyk ? proofColor(hex) : hex);
 
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = paint(design.background);
-  ctx.fillRect(0, 0, width, height);
+  if (!options.transparentBackground) {
+    ctx.fillStyle = paint(design.background);
+    ctx.fillRect(0, 0, width, height);
+  }
 
   for (const el of design.elements) {
     for (const dx of [-width, 0, width]) {

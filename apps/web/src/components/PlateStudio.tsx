@@ -42,6 +42,7 @@ export default function PlateStudio({
   const [cal, setCal] = useState<PlateCalibration | null>(null);
   const [mask, setMask] = useState<MaskOptions>(DEFAULT_MASK);
   const [showHandles, setShowHandles] = useState(true);
+  const [cupColour, setCupColour] = useState(false);
   const [coverage, setCoverage] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -82,10 +83,13 @@ export default function PlateStudio({
   /* ---- the design, rendered once per change ----------------------------- */
   const designCanvas = useMemo(() => {
     const { widthPx, heightPx } = profile.designCanvas;
-    const w = 1600;
+    // Oversampled: only half the circumference is visible, and the middle of
+    // the face is magnified by the projection, so the source has to out-resolve
+    // the cup in the photograph by a good margin.
+    const w = 2600;
     return renderDesignToCanvas(design, w, Math.round((w * heightPx) / widthPx), undefined,
-      { proofCmyk });
-  }, [design, profile, proofCmyk]);
+      { proofCmyk, transparentBackground: !cupColour });
+  }, [design, profile, proofCmyk, cupColour]);
 
   /* ---- composite + handles --------------------------------------------- */
   useEffect(() => {
@@ -275,6 +279,11 @@ export default function PlateStudio({
             <span className="stagebar__sep" />
             <button className={showHandles ? 'chip chip--on' : 'chip'}
               onClick={() => setShowHandles((v) => !v)}>Handles</button>
+            <button className={cupColour ? 'chip chip--on' : 'chip'}
+              onClick={() => setCupColour((v) => !v)}
+              title="Off: the cup's own paper shows through, which is what a printed white cup looks like. On: the design's background colour is printed over the whole cup.">
+              Cup colour
+            </button>
             <button className="chip chip--primary" onClick={() => void download()} disabled={busy}>
               {busy ? 'Working…' : 'Download JPG'}
             </button>

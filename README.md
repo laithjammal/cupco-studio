@@ -374,6 +374,7 @@ Three things make it look real rather than pasted:
 | **Shape** | Warped through the geometry engine, so artwork compresses towards the silhouette as it does on a real cup. A perspective transform cannot do this — a cup is neither flat nor a quadrilateral. |
 | **Light** | The artwork is **multiplied** into the photograph, not drawn over it. Every highlight, shadow and bit of board texture survives underneath. Ink on paper darkens what is below it, so multiply is not a convenient blend mode — it is what ink does. |
 | **What is in front** | Fingers, lids and straws crossing the cup stay in front, automatically. |
+| **The paper** | The design's background is *not* painted onto the plate. The cup's own paper is right there in the photograph, with its real shading and texture — covering it with a flat panel puts a visible edge on the cup and the artwork stops reading as printed and starts reading as a sticker. Turn **Cup colour** on when the design genuinely calls for a coloured cup. |
 
 That last one is the trick worth knowing. A pixel is bare cup board if it is **bright and
 neutral**. A white cup is both; skin is bright but distinctly warm; a black lid is neutral but
