@@ -19,6 +19,7 @@ import { randomId } from '@cupco/persistence';
 import { compositeOntoPlate, DEFAULT_MASK } from '@/lib/plate-composite';
 import type { MaskOptions } from '@/lib/plate-composite';
 import { getStorage } from '@/lib/idb';
+import { autoFitPlate } from '@/lib/plate-autofit';
 import { renderDesignToCanvas } from '@/lib/design';
 import type { Design } from '@/lib/design';
 import type { CupProfile } from '@cupco/geometry';
@@ -58,6 +59,7 @@ export default function PlateStudio({
   const [cupColourOverride, setCupColourOverride] = useState<boolean | null>(null);
   const [coverage, setCoverage] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [zoom, setZoom] = useState(1);
 
   const viewRef = useRef<HTMLCanvasElement | null>(null);
   const dragRef = useRef<HandleId | null>(null);
@@ -108,9 +110,23 @@ export default function PlateStudio({
       URL.revokeObjectURL(url);
       if (dead) return;
       setImage(img);
+
+      // Fit it for them. A plate that has never been calibrated arrives with
+      // the generic default, which is always wrong for a specific photograph -
+      // and a wrong fit is not obviously a fit problem when you look at the
+      // result, it just looks like a bad mockup.
+      if (!plate.fitted) {
+        const found = autoFitPlate(img);
+        if (found) {
+          setCal(found.calibration);
+          void getStorage().projects.savePlate({
+            ...plate, calibration: found.calibration, fitted: true, updatedAt: Date.now(),
+          }).then(refresh);
+        }
+      }
     })();
     return () => { dead = true; };
-  }, [currentId, currentAssetId]);
+  }, [currentId, currentAssetId, refresh]);
 
   /** Is the design's background just bare cup board? */
   const backgroundIsPaper = useMemo(() => {
@@ -236,10 +252,24 @@ export default function PlateStudio({
 
   const onUp = () => { dragRef.current = null; void persist(); };
 
-  const persist = useCallback(async () => {
-    if (!current || !cal) return;
+  /**
+   * Save the fit.
+   *
+   * Takes the calibration as an argument rather than only reading state,
+   * because a caller that has just called setCal still holds the OLD value in
+   * its closure - so "fit it, then save it" silently saved the previous fit.
+   */
+  const persist = useCallback(async (override?: {
+    calibration?: PlateCalibration; mask?: MaskOptions;
+  }) => {
+    const nextCal = override?.calibration ?? cal;
+    if (!current || !nextCal) return;
     await getStorage().projects.savePlate({
-      ...current, calibration: cal, mask, updatedAt: Date.now(),
+      ...current,
+      calibration: nextCal,
+      mask: override?.mask ?? mask,
+      fitted: true,
+      updatedAt: Date.now(),
     });
     await refresh();
   }, [current, cal, mask, refresh]);
@@ -324,6 +354,15 @@ export default function PlateStudio({
             <span className="stagebar__sep" />
             <button className={showHandles ? 'chip chip--on' : 'chip'}
               onClick={() => setShowHandles((v) => !v)}>Handles</button>
+            <span className="stagebar__group">
+              <button className="chip" onClick={() => setZoom((z) => Math.max(0.25, z / 1.4))}
+                title="Zoom out">−</button>
+              <button className="chip" onClick={() => setZoom(1)} title="Fit to the panel">
+                {Math.round(zoom * 100)}%
+              </button>
+              <button className="chip" onClick={() => setZoom((z) => Math.min(8, z * 1.4))}
+                title="Zoom in">+</button>
+            </span>
             <button className={cupColour ? 'chip chip--on' : 'chip'}
               onClick={() => setCupColourOverride(!cupColour)}
               title={backgroundIsPaper
@@ -357,14 +396,24 @@ export default function PlateStudio({
 
       {current && (
         <div className="plates__work">
-          <canvas
-            ref={viewRef}
-            className="plates__canvas"
-            onPointerDown={onDown}
-            onPointerMove={onMove}
-            onPointerUp={onUp}
-            onPointerCancel={onUp}
-          />
+          {/* Scrolls when zoomed past the panel, so the handles stay reachable
+              at any magnification. */}
+          <div className="plates__viewport">
+            <canvas
+              ref={viewRef}
+              className="plates__canvas"
+              style={{ width: `${zoom * 100}%` }}
+              onWheel={(e) => {
+                if (!e.ctrlKey && !e.metaKey) return;
+                e.preventDefault();
+                setZoom((z) => Math.min(8, Math.max(0.25, z * (e.deltaY < 0 ? 1.12 : 1 / 1.12))));
+              }}
+              onPointerDown={onDown}
+              onPointerMove={onMove}
+              onPointerUp={onUp}
+              onPointerCancel={onUp}
+            />
+          </div>
 
           <aside className="plates__side">
             <div className="field">
@@ -414,8 +463,14 @@ export default function PlateStudio({
             <div className="btnrow" style={{ marginTop: 12 }}>
               <button onClick={() => {
                 if (!image) return;
-                setCal(defaultCalibration(image.naturalWidth, image.naturalHeight));
-              }}>Reset fit</button>
+                const found = autoFitPlate(image);
+                const next = found
+                  ? found.calibration
+                  : defaultCalibration(image.naturalWidth, image.naturalHeight);
+                setCal(next);
+                if (!found) onStatus('Could not find the cup automatically — drag the handles.');
+                void persist({ calibration: next });
+              }}>Auto-fit</button>
               <button onClick={async () => {
                 if (!current || !window.confirm(`Delete plate "${current.name}"?`)) return;
                 await getStorage().projects.deletePlate(current.id);

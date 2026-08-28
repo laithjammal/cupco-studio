@@ -363,9 +363,23 @@ shadows, the hand and the out-of-focus background are all real. All the app does
 artwork on the cup that is already in the picture.
 
 **You supply the plates** — photograph a plain white cup in whatever settings you want to sell
-in. Each is calibrated once, by dragging six handles: four to the corners of the printable
-area, two to make the top and bottom edges follow the cup's curve. The calibration is saved
-with the plate, so it then works for every customer's artwork.
+in. **The app finds the cup for you**: adding a plate locates it in the photograph and places
+the handles on it. The six handles remain for adjustment, and dragging one marks the plate as
+hand-fitted so the automatic fit never overwrites it.
+
+Finding a cup is not a colour problem — a terrazzo counter is bright and neutral in exactly the
+way a white cup is. It is an *edge* problem, and the search follows the structure of the object:
+the lid is the one dark band with a tall bright column beneath it, which fixes the top and the
+centre; the base is the strongest bright-to-dark step straight down that centre, which is the
+contact shadow; and the walls are the first sustained step outward on each row.
+
+The cup is then fitted as what it is — **a solid of revolution**. One axis and one half-width,
+so every row constrains both silhouettes at once. That matters because one side is routinely
+unusable: on a lit-from-the-right photograph the shaded left edge simply has no step to find
+below the midpoint. Fitting the sides independently threw away the good side along with the bad
+and under-tapered the cup by 35px.
+
+You can zoom the plate view (**− / % / +**, or ⌘-scroll) to place handles precisely.
 
 Three things make it look real rather than pasted:
 

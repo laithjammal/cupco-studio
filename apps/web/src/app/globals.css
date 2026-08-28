@@ -359,3 +359,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 .plates__side { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
 @media (max-width: 1100px) { .plates__work { grid-template-columns: 1fr; } }
+.plates__viewport {
+  max-height: calc(100vh - 190px); overflow: auto;
+  border: 1px solid var(--line); border-radius: 10px; background: #fff;
+}
+.plates__viewport .plates__canvas { border: none; border-radius: 0; max-width: none; }

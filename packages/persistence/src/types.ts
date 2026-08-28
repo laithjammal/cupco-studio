@@ -237,6 +237,15 @@ export interface StoredPlate {
     edgeFade: number;
     opacity: number;
   };
+  /**
+   * Whether the cup has been located in this photograph yet.
+   *
+   * Set once, by the automatic fit or by the operator dragging a handle. It
+   * exists so a plate is never re-fitted underneath someone who has adjusted
+   * it by hand - an automatic fit that overwrites a manual one is worse than
+   * no automatic fit at all.
+   */
+  fitted?: boolean;
   createdAt: number;
   updatedAt: number;
 }

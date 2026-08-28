@@ -26,43 +26,31 @@ so each photograph is set up once and then works for every customer's artwork.
 
 | File | Notes |
 |---|---|
-| `mockup-3.png` | 1329×1183. Lidded, on a terrazzo counter, café behind. **The better plate** — nothing in front of the cup, even light, and a setting that flatters a design. |
-| `hand-lidded.png` | 1337×1177. Held, lidded, concrete background. Shows scale, but the fingers crop the wrap. |
+| `mockup-3.png` | 1329×1183. Lidded, on a terrazzo counter, café behind. Nothing in front of the cup, even light, and a setting that flatters a design. |
 
-### mockup-3.png
+`mockup-3.png` is a generated image rather than a photograph of a real Cupco cup. It works well
+as a plate, but for customer-facing work it is worth shooting the **actual product** — the
+credibility of a mockup rests on the cup in it being the cup they will receive, and a generated
+cup will not have the true 8oz proportions.
 
-```
-topLeft     505, 620        topBow       8
-topRight    832, 616        bottomBow   18
-bottomLeft  551, 934        centreU      0.5
-bottomRight 779, 930        visibleSpan  0.5
-```
+An earlier `hand-lidded.png` was removed; it is still in the git history if it is ever wanted.
 
-Measured: wall from y≈617 under the lid to y≈950 at the base; silhouette 510–826 at y=660,
-narrowing to 551–779 near the bottom.
+## Calibration is automatic
+
+Adding a plate runs the fit: the cup is located in the photograph and the handles are placed on
+it. The six handles remain for adjustment, and dragging one marks the plate as hand-fitted so
+the automatic fit never overwrites it. **Auto-fit** re-runs it.
+
+On `mockup-3.png` the automatic fit lands within about 1% of the silhouette measured by hand,
+and errs *inside* the cup — the safe direction, since overshooting puts artwork on the counter.
+
+| corner | automatic | measured by hand |
+|---|---|---|
+| top left | 500, 633 | 505, 620 |
+| top right | 816, 633 | 832, 616 |
+| bottom left | 541, 943 | 551, 934 |
+| bottom right | 775, 943 | 779, 930 |
 
 One thing to watch on this plate: the terrazzo counter is bright and neutral, just like the
 cup, so the mask cannot tell them apart. The calibration has to sit on the cup — overshoot and
-artwork will spill onto the bench. On the hand plate the opposite was true: fingers and lid are
-easy to reject, so the calibration could be generous.
-
-### hand-lidded.png
-
-Calibration is saved in the browser, so it survives reloads but not clearing site data. Measured
-values, if they ever need re-entering:
-
-```
-topLeft     521, 497        topBow      16
-topRight    823, 483        bottomBow   18
-bottomLeft  561, 797        centreU     0.5
-bottomRight 777, 791        visibleSpan 0.5
-```
-
-These come from scanning the photograph, not from eyeballing it: the cup wall runs from
-y≈475 under the lid to y≈813 at the base, spanning x 530–811 at mid-height and 561–776 near
-the bottom.
-
-`hand-lidded.png` is a generated image rather than a photograph of a real Cupco cup. It works
-well as a plate, but for customer-facing work it is worth shooting the **actual product** — the
-credibility of a mockup rests on the cup in it being the cup they will receive, and a generated
-cup will not have the true 8oz proportions.
+artwork will spill onto the bench.
