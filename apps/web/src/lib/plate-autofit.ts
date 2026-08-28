@@ -42,8 +42,8 @@
  * directly, and the sag is counted once.
  */
 
-import { DEFAULT_VISIBLE_SPAN } from '@cupco/geometry';
-import type { PlateCalibration } from '@cupco/geometry';
+import { DEFAULT_VISIBLE_SPAN, plateVerticalCoverage } from '@cupco/geometry';
+import type { CupDimensions, PlateCalibration } from '@cupco/geometry';
 
 /** Width the search runs at. Detail beyond this only slows it down. */
 const WORK_WIDTH = 420;
@@ -374,6 +374,9 @@ export interface AutoFitResult {
   confidence: number;
 }
 
+/** The dimensions the fit measures itself against. */
+export type FitCup = Pick<CupDimensions, 'topDiameterMm' | 'bottomDiameterMm' | 'heightMm'>;
+
 interface Sides { left: Line; right: Line; samples: number }
 
 /**
@@ -439,7 +442,9 @@ function fitSides(g: PlateGrid, fromY: number, baseY: number, centre: number): S
 }
 
 /** Fit a calibration to the cup in an already-prepared luminance grid. */
-export function fitCupInGrid(g: PlateGrid, centreU = 0.5): AutoFitResult | null {
+export function fitCupInGrid(
+  g: PlateGrid, centreU = 0.5, cup?: FitCup,
+): AutoFitResult | null {
   const lid = findLid(g);
   const centre = Math.round(lid ? lid.centre : g.w / 2);
   const roughTop = (lid ? lid.bottom : Math.round(g.h * 0.3)) + 2;
@@ -503,16 +508,30 @@ export function fitCupInGrid(g: PlateGrid, centreU = 0.5): AutoFitResult | null 
   ));
 
   const s = g.scale;
+  const topLeft = { x: valueAt(sides.left, topLeftY) * s, y: topLeftY * s };
+  const topRight = { x: valueAt(sides.right, topRightY) * s, y: topRightY * s };
+  const bottomLeft = { x: valueAt(sides.left, baseY) * s, y: baseY * s };
+  const bottomRight = { x: valueAt(sides.right, baseY) * s, y: baseY * s };
+
+  // How much of the cup's height the band covers, measured against the real
+  // cup rather than assumed to be all of it. See plateVerticalCoverage.
+  const vTop = cup
+    ? plateVerticalCoverage({
+      topWidth: topRight.x - topLeft.x,
+      bottomWidth: bottomRight.x - bottomLeft.x,
+      height: (bottomLeft.y + bottomRight.y) / 2 - (topLeft.y + topRight.y) / 2,
+    }, cup)
+    : 1;
+
   return {
     calibration: {
-      topLeft: { x: valueAt(sides.left, topLeftY) * s, y: topLeftY * s },
-      topRight: { x: valueAt(sides.right, topRightY) * s, y: topRightY * s },
-      bottomLeft: { x: valueAt(sides.left, baseY) * s, y: baseY * s },
-      bottomRight: { x: valueAt(sides.right, baseY) * s, y: baseY * s },
+      topLeft, topRight, bottomLeft, bottomRight,
       topBow: topBow * s,
       bottomBow: bottomBow * s,
       centreU,
       visibleSpan: DEFAULT_VISIBLE_SPAN,
+      vTop,
+      vBottom: 0,
     },
     confidence: Math.min(1, sides.samples / (2 * (baseY - roughTop) || 1)),
   };
@@ -521,6 +540,7 @@ export function fitCupInGrid(g: PlateGrid, centreU = 0.5): AutoFitResult | null 
 export function autoFitPlate(
   source: HTMLImageElement | HTMLCanvasElement,
   centreU = 0.5,
+  cup?: FitCup,
 ): AutoFitResult | null {
-  return fitCupInGrid(toGrid(source), centreU);
+  return fitCupInGrid(toGrid(source), centreU, cup);
 }

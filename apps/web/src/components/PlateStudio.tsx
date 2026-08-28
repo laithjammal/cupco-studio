@@ -116,7 +116,7 @@ export default function PlateStudio({
       // and a wrong fit is not obviously a fit problem when you look at the
       // result, it just looks like a bad mockup.
       if (!plate.fitted) {
-        const found = autoFitPlate(img);
+        const found = autoFitPlate(img, 0.5, profile.dimensions);
         if (found) {
           setCal(found.calibration);
           void getStorage().projects.savePlate({
@@ -434,6 +434,11 @@ export default function PlateStudio({
               format={(v) => `${Math.round(v * 100)}% of the way round`}
               hint="How much of the circumference the photo shows edge to edge. Half for a square-on cup; less at an angle." />
 
+            <Slider label="Hidden by the lid" value={1 - (cal?.vTop ?? 1)} min={0} max={0.35} step={0.005}
+              onChange={(v) => setCal((c) => (c ? { ...c, vTop: 1 - v } : c))} onCommit={persist}
+              format={(v) => (v < 0.0025 ? 'nothing' : `${(v * profile.dimensions.heightMm).toFixed(0)}mm`)}
+              hint="How much of the printable wall the lid covers. Set from the cup's own width when the plate is fitted — raise it if artwork looks squashed, lower it if it looks stretched." />
+
             <Slider label="Ink strength" value={mask.opacity} min={0.2} max={1} step={0.01}
               onChange={(v) => setMask((m) => ({ ...m, opacity: v }))} onCommit={persist}
               format={(v) => `${Math.round(v * 100)}%`} />
@@ -463,7 +468,7 @@ export default function PlateStudio({
             <div className="btnrow" style={{ marginTop: 12 }}>
               <button onClick={() => {
                 if (!image) return;
-                const found = autoFitPlate(image);
+                const found = autoFitPlate(image, 0.5, profile.dimensions);
                 const next = found
                   ? found.calibration
                   : defaultCalibration(image.naturalWidth, image.naturalHeight);

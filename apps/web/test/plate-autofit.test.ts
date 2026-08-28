@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { fitCupInGrid, type PlateGrid } from '@/lib/plate-autofit';
 
+/** The real 8oz cup, from the profile. */
+const CUP = { topDiameterMm: 73.62, bottomDiameterMm: 55, heightMm: 90 };
+
 /**
  * A cup drawn from known numbers.
  *
@@ -185,5 +188,60 @@ describe('finding a cup in a plate', () => {
   it('is deterministic, so a reopened mockup looks the way it did', () => {
     const g = drawCup(BASE);
     expect(JSON.stringify(fitCupInGrid(g))).toBe(JSON.stringify(fitCupInGrid(g)));
+  });
+});
+
+/**
+ * A lidded cup hides the top of its own printable area, so the band the fit
+ * finds is not the whole wall. Cramming the whole design into it squashes
+ * every element and drags it down the cup - which looks like bad artwork
+ * rather than a bad measurement, so nobody diagnoses it.
+ */
+describe('working out how much of the cup the lid is covering', () => {
+  /** An 8oz cup with the top `hidden` fraction of its wall behind a lid. */
+  function liddedCup(visible: number, pxPerMm: number): CupSpec {
+    const halfBase = (CUP.bottomDiameterMm / 2) * pxPerMm;
+    const diameterAtTop = CUP.bottomDiameterMm
+      + (CUP.topDiameterMm - CUP.bottomDiameterMm) * visible;
+    const halfTop = (diameterAtTop / 2) * pxPerMm;
+    const wall = CUP.heightMm * visible * pxPerMm;
+    return { ...BASE, halfTop, halfBase, topY: 100, baseY: Math.round(100 + wall),
+      h: Math.round(100 + wall + 90), lidOverhang: 6 };
+  }
+
+  it.each([1, 0.9, 0.85, 0.8])('recovers a band covering %s of the wall', (visible) => {
+    const spec = liddedCup(visible, 2.2);
+    const fit = fitCupInGrid(drawCup(spec), 0.5, CUP);
+    expect(fit).not.toBeNull();
+    expect(fit!.calibration.vTop).toBeCloseTo(visible, 1);
+  });
+
+  it('leaves the whole wall in play when it is not told what cup it is', () => {
+    const fit = fitCupInGrid(drawCup(liddedCup(0.8, 2.2)));
+    expect(fit!.calibration.vTop).toBe(1);
+  });
+
+  /**
+   * The point of the exercise: artwork must not be squashed. A patch that is
+   * square in millimetres has to come out square in pixels.
+   */
+  it('leaves a square patch square', () => {
+    const visible = 0.82;
+    const fit = fitCupInGrid(drawCup(liddedCup(visible, 2.2)), 0.5, CUP)!;
+    const c = fit.calibration;
+    const vTop = c.vTop ?? 1;
+    const bandHeight = (c.bottomLeft.y + c.bottomRight.y) / 2
+      - (c.topLeft.y + c.topRight.y) / 2;
+    const down = bandHeight / (CUP.heightMm * vTop);
+    // Across, at the middle of the band.
+    const v = vTop / 2;
+    const t = (vTop - v) / vTop;
+    const topW = c.topRight.x - c.topLeft.x, botW = c.bottomRight.x - c.bottomLeft.x;
+    const across = (topW + (botW - topW) * t)
+      / (CUP.bottomDiameterMm + (CUP.topDiameterMm - CUP.bottomDiameterMm) * v);
+    expect(down / across).toBeGreaterThan(0.95);
+    expect(down / across).toBeLessThan(1.05);
+    // Taking the band for the whole wall is what got this wrong.
+    expect((bandHeight / CUP.heightMm) / across).toBeLessThan(0.9);
   });
 });

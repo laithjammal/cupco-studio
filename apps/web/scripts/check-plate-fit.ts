@@ -15,6 +15,7 @@
  */
 import sharp from 'sharp';
 import { fitCupInGrid, type PlateGrid } from '../src/lib/plate-autofit';
+import { getProfile } from '@cupco/geometry';
 
 /** Must match WORK_WIDTH in plate-autofit. */
 const WORK_WIDTH = 420;
@@ -52,7 +53,10 @@ const trueTop = (x: number) => {
 
 async function main(): Promise<void> {
   const file = process.argv[2] ?? 'plates/mockup-3.png';
-  const fit = fitCupInGrid(await gridFrom(file));
+  const profile = getProfile('8oz-single-wall');
+  if (!profile) throw new Error('8oz profile missing');
+  const cup = profile.dimensions;
+  const fit = fitCupInGrid(await gridFrom(file), 0.5, cup);
   if (!fit) {
     console.error(`No cup found in ${file}.`);
     process.exit(1);
@@ -74,6 +78,25 @@ async function main(): Promise<void> {
   const topCentre = (c.topLeft.y + c.topRight.y) / 2 + c.topBow;
   console.log(`\n  top edge at the centre of the cup: ${topCentre.toFixed(1)}, measured 625.0`);
   console.log(`  topBow ${c.topBow.toFixed(1)}   bottomBow ${c.bottomBow.toFixed(1)}`);
+
+  // Does a patch that is square in millimetres come out square in pixels?
+  const vTop = c.vTop ?? 1;
+  const topW = c.topRight.x - c.topLeft.x;
+  const botW = c.bottomRight.x - c.bottomLeft.x;
+  const bandH = (c.bottomLeft.y + c.bottomRight.y) / 2 - (c.topLeft.y + c.topRight.y) / 2;
+  console.log(`\n  the lid covers ${((1 - vTop) * cup.heightMm).toFixed(1)}mm of the `
+    + `${cup.heightMm}mm wall, so the band shows design v 0 to ${vTop.toFixed(3)}`);
+  console.log('\n  a square patch on the cup renders this tall for its width:');
+  for (const v of [0.15, 0.35, 0.55, 0.75]) {
+    if (v > vTop) continue;
+    const t = (vTop - v) / vTop;
+    const across = (topW + (botW - topW) * t)
+      / (cup.bottomDiameterMm + (cup.topDiameterMm - cup.bottomDiameterMm) * v);
+    const down = bandH / (cup.heightMm * vTop);
+    const naive = bandH / cup.heightMm;
+    console.log(`    v=${v.toFixed(2)}   ${(down / across * 100).toFixed(1)}%`
+      + `   (taking the band for the whole wall: ${(naive / across * 100).toFixed(1)}%)`);
+  }
 }
 
 main();

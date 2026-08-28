@@ -54,6 +54,22 @@ top edge within 1px. Run `npx tsx apps/web/scripts/check-plate-fit.ts` to print 
 Composited, that means nothing at all is painted onto the lid, onto the counter, or past
 either silhouette, and the widest strip of bare cup left anywhere along an edge is 2px.
 
+## The lid hides part of the design, and that is the point
+
+The band between the handles is not the whole printable wall — the lid covers the top of it.
+The fit works out how much from the band's own width: the cup's diameters are known from its
+profile, so the marked width in pixels fixes the scale, and the band's height then says how
+many millimetres of cup it spans. On `mockup-3.png` that is **13.5mm of lid**, leaving design
+v 0 to 0.85 on show.
+
+This matters more than it sounds. Treating the band as the full 90mm squashed every design by
+about a sixth and slid it down the cup — which looks like bad artwork rather than a bad
+measurement, so it is not a thing anyone diagnoses. A patch that is square in millimetres now
+renders 97–102% as tall as it is wide, against 82–87% before.
+
+**Hidden by the lid** is a slider if a plate needs it: raise it if artwork looks squashed,
+lower it if it looks stretched.
+
 Two things to watch on this plate:
 
 - The terrazzo counter is bright and neutral, just like the cup, so the mask cannot tell them

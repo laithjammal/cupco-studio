@@ -8,17 +8,17 @@ engine**. There is no second, approximate mockup pipeline that could drift out o
 
 ## Status
 
-Roughly 17,600 lines of TypeScript across seven packages. **472 tests, all passing.**
+Roughly 17,600 lines of TypeScript across seven packages. **487 tests, all passing.**
 
 | Area | State | Tests |
 |---|---|---|
-| Geometry engine, 8oz profile, elevation, plates | ✅ | 131 |
+| Geometry engine, 8oz profile, elevation, plates | ✅ | 140 |
 | Fan rasteriser | ✅ | 18 |
 | Vector: SVG import, tracing, QR styles, CMYK | ✅ | 110 |
 | Concept generation (10 layouts) | ✅ | 35 |
 | Persistence: assets, migration, GC, plates | ✅ | 55 |
 | Preflight: 12 production rules | ✅ | 48 |
-| App: serialisation, snapping, uploads, plate fitting | ✅ | 75 |
+| App: serialisation, snapping, uploads, plate fitting | ✅ | 81 |
 | 3D cup, graduated studio backdrop, turntable MP4 | ✅ | — |
 | Photo mockups: artwork composited onto real cups | ✅ | — |
 | Drawn mockups, five settings | ✅ | — |
@@ -405,6 +405,25 @@ Against a silhouette measured by hand off the supplied plate, every corner now l
 2px and the top edge within 1px; nothing is painted onto the lid, the counter, or past either
 edge. `npx tsx apps/web/scripts/check-plate-fit.ts` prints that comparison.
 
+**The band is not the whole cup, and the fit works out how much of it is missing.** A lid
+covers the top of the printable wall, so what anyone can mark — by hand or automatically — is
+the part they can *see*. Treating that band as the full 90mm crams the design into the 76mm
+that shows: every element is squashed by about a sixth and dragged down the cup. Nothing about
+that reads as a measurement fault. It reads as artwork that does not sit right, which is
+exactly how it was reported.
+
+The band's own width settles it. The cup's diameters are known exactly from its profile, so
+the marked width in pixels *is* a ruler — and once the scale is known, the band's height in
+pixels says how many millimetres of cup it spans. On the supplied plate that comes out as
+13.5mm of lid, which matches the skirt you can see in the photograph. A patch that is square
+in millimetres then renders between 97% and 102% as tall as it is wide, against 82–87% before.
+
+The residual few percent is the plate's own perspective — the rim is nearer the camera than
+the base, so it is magnified — and a straight-sided band cannot absorb it. The scale is taken
+as the mean of the two ends, which spreads that error over the cup rather than loading it all
+onto one end. **Hidden by the lid** is a slider, for a plate where the automatic answer is
+wrong.
+
 You can zoom the plate view (**− / % / +**, or ⌘-scroll) to place handles precisely.
 
 Three things make it look real rather than pasted:
@@ -533,12 +552,12 @@ macOS Preview lists GIF frames rather than playing them, so the format meant to 
 ## Verify
 
 ```bash
-npx vitest run --root packages/geometry     # 131 tests
+npx vitest run --root packages/geometry     # 140 tests
 npx vitest run --root packages/render       # 18 tests
 npx vitest run --root packages/persistence  # 55 tests
 npx vitest run --root packages/preflight    # 48 tests
 npx vitest run --root packages/vector       # 110 tests, incl. QR decode
-npx vitest run --root apps/web              # 75 tests, incl. finding a cup in a plate
+npx vitest run --root apps/web              # 81 tests, incl. finding a cup in a plate
 npx tsx packages/vector/scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg
 npx tsx packages/geometry/scripts/report-profile.ts 8oz-single-wall
 npx tsx packages/geometry/scripts/emit-fan-svg.ts 8oz-single-wall out/8oz-fan.svg

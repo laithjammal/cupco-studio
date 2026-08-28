@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   plateU, plateFacing, platePoint, plateBounds, defaultCalibration,
-  DEFAULT_VISIBLE_SPAN,
+  plateV, plateVerticalCoverage, DEFAULT_VISIBLE_SPAN,
 } from '../src/index';
 import type { PlateCalibration } from '../src/index';
 
@@ -156,5 +156,100 @@ describe('default calibration', () => {
     expect(cal.bottomRight.x - cal.bottomLeft.x)
       .toBeLessThan(cal.topRight.x - cal.topLeft.x);
     expect(cal.topBow).toBeGreaterThan(0);
+  });
+});
+
+describe('how much of the cup the calibrated band covers', () => {
+  const CUP = { topDiameterMm: 73.62, bottomDiameterMm: 55, heightMm: 90 };
+
+  /**
+   * A band drawn to the real cup's own proportions must come back as the whole
+   * wall. The numbers are the 8oz profile's, at an arbitrary 5 px/mm - so a
+   * pass means the arithmetic agrees with the cup, not with itself.
+   */
+  it('reports the whole wall when the band is the whole wall', () => {
+    const k = 5;
+    expect(plateVerticalCoverage({
+      topWidth: 73.62 * k, bottomWidth: 55 * k, height: 90 * k,
+    }, CUP)).toBeCloseTo(1, 3);
+  });
+
+  it('reports two thirds when two thirds of the wall is showing', () => {
+    const k = 5;
+    const v = 2 / 3;
+    const topDiameter = 55 + (73.62 - 55) * v;
+    expect(plateVerticalCoverage({
+      topWidth: topDiameter * k, bottomWidth: 55 * k, height: 90 * v * k,
+    }, CUP)).toBeCloseTo(v, 3);
+  });
+
+  /**
+   * The measurement that started this. On the supplied plate the band is
+   * 319.9px across the top, 229.5 across the base and 332.3 tall - and 332.3px
+   * is far too short to be 90mm at the ~4.3 px/mm those widths imply. Taking
+   * it for the whole wall squashed every design by about a sixth.
+   */
+  it('finds the lid on the real plate', () => {
+    const v = plateVerticalCoverage(
+      { topWidth: 319.9, bottomWidth: 229.5, height: 332.3 }, CUP,
+    );
+    expect(v).toBeGreaterThan(0.80);
+    expect(v).toBeLessThan(0.89);
+    // What that is worth in millimetres of lid, which is the checkable claim:
+    // the lid's skirt in the photograph is about 65px, or 15mm of cup.
+    const hidden = (1 - v) * 90;
+    expect(hidden).toBeGreaterThan(9);
+    expect(hidden).toBeLessThan(18);
+  });
+
+  /** A band that covers the whole wall must leave artwork undistorted. */
+  it('makes a square patch square', () => {
+    const v = plateVerticalCoverage(
+      { topWidth: 319.9, bottomWidth: 229.5, height: 332.3 }, CUP,
+    );
+    // Pixels per mm across, at the middle of the band, and down it.
+    const midDiameter = 55 + (73.62 - 55) * (v / 2);
+    const across = ((319.9 + 229.5) / 2) / midDiameter;
+    const down = 332.3 / (90 * v);
+    expect(down / across).toBeCloseTo(1, 1);
+    // Without the correction the same patch comes out a sixth too flat.
+    expect((332.3 / 90) / across).toBeLessThan(0.9);
+  });
+
+  it('refuses a band taller than the cup rather than inventing one', () => {
+    expect(plateVerticalCoverage(
+      { topWidth: 100, bottomWidth: 90, height: 4000 }, CUP,
+    )).toBe(1);
+  });
+
+  it('falls back to the whole wall when nothing was measured', () => {
+    expect(plateVerticalCoverage({ topWidth: 0, bottomWidth: 0, height: 0 }, CUP)).toBe(1);
+  });
+});
+
+describe('the design rows a band shows', () => {
+  it('shows the whole design when nothing is hidden', () => {
+    expect(plateV(0, CAL)).toBe(1);
+    expect(plateV(1, CAL)).toBe(0);
+  });
+
+  it('starts below the top of the design when a lid covers it', () => {
+    const lidded: PlateCalibration = { ...CAL, vTop: 0.85, vBottom: 0 };
+    expect(plateV(0, lidded)).toBeCloseTo(0.85, 12);
+    expect(plateV(1, lidded)).toBeCloseTo(0, 12);
+    expect(plateV(0.5, lidded)).toBeCloseTo(0.425, 12);
+  });
+
+  /**
+   * An element under the lid must land ABOVE the band, not inside it. Getting
+   * this backwards would slide every design up rather than down.
+   */
+  it('puts artwork the lid covers outside the band', () => {
+    const lidded: PlateCalibration = { ...CAL, vTop: 0.85, vBottom: 0 };
+    const tOf = (v: number) => (0.85 - v) / 0.85;
+    expect(tOf(0.95)).toBeLessThan(0);
+    expect(tOf(0.55)).toBeGreaterThan(0);
+    expect(tOf(0.55)).toBeLessThan(1);
+    expect(plateV(tOf(0.55), lidded)).toBeCloseTo(0.55, 12);
   });
 });

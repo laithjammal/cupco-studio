@@ -55,9 +55,78 @@ export interface PlateCalibration {
    * the visible face.
    */
   visibleSpan: number;
+  /**
+   * Design v at the top and bottom edges of the calibrated area.
+   *
+   * These exist because the calibrated area is usually NOT the whole printable
+   * wall. A lid covers the top of it. What the operator can mark - and what the
+   * automatic fit can find - is the part of the cup they can SEE.
+   *
+   * Assuming the marked band is the whole wall crams a 90mm design into the
+   * 76mm of it that shows, which squashes every element vertically and drags
+   * it downward. Nothing about that reads as a calibration fault; it reads as
+   * artwork that does not sit right on the cup.
+   *
+   * Default to the whole wall (1 and 0) when absent, which is correct for an
+   * unlidded cup and is what plates calibrated before this existed assumed.
+   */
+  vTop?: number;
+  vBottom?: number;
 }
 
 export const DEFAULT_VISIBLE_SPAN = 0.5;
+
+/** Design v at vertical fraction `t` across the calibrated area, 0 top to 1 bottom. */
+export function plateV(t: number, cal: PlateCalibration): number {
+  const top = cal.vTop ?? 1;
+  const bottom = cal.vBottom ?? 0;
+  return top + (bottom - top) * t;
+}
+
+/**
+ * How much of the cup's height the calibrated band covers, from its own width.
+ *
+ * The band's WIDTH is a ruler. A cup's diameters are known exactly from its
+ * profile, so the marked width in pixels fixes the scale in pixels per
+ * millimetre - and once the scale is known, the band's height in pixels says
+ * how many millimetres of cup it spans. No one has to estimate how far down
+ * the lid reaches; the photograph answers it.
+ *
+ * The scale is taken as the mean of the two ends. They rarely agree exactly:
+ * the top of a cup is nearer the camera than its base, so it is magnified, and
+ * on a plate that is a rendering rather than a photograph the two ends can
+ * disagree by more than perspective alone explains. Averaging spreads that
+ * error over the whole cup instead of loading it onto one end.
+ *
+ * Iterated because the top diameter depends on the answer - the cup tapers, so
+ * how wide it is where the band stops depends on where the band stops. It
+ * settles in a handful of rounds.
+ */
+export function plateVerticalCoverage(
+  band: { topWidth: number; bottomWidth: number; height: number },
+  cup: { topDiameterMm: number; bottomDiameterMm: number; heightMm: number },
+): number {
+  const { topWidth, bottomWidth, height } = band;
+  const { topDiameterMm: dTop, bottomDiameterMm: dBottom, heightMm } = cup;
+  if (!(topWidth > 0 && bottomWidth > 0 && height > 0)) return 1;
+  if (!(dBottom > 0 && heightMm > 0)) return 1;
+
+  const scaleAtBottom = bottomWidth / dBottom;
+  let v = 1;
+  for (let i = 0; i < 24; i++) {
+    const diameterAtTop = dBottom + (dTop - dBottom) * v;
+    if (diameterAtTop <= 0) break;
+    const scale = (topWidth / diameterAtTop + scaleAtBottom) / 2;
+    const next = height / (heightMm * scale);
+    if (!Number.isFinite(next)) break;
+    if (Math.abs(next - v) < 1e-6) { v = next; break; }
+    v = next;
+  }
+  // A band taller than the cup means the marks are wrong, not that the cup
+  // grew; a band under a fifth of it means the fit failed. Neither is worth
+  // acting on, so fall back to "the whole wall" and let the operator see it.
+  return v > 1 || v < 0.2 || !Number.isFinite(v) ? 1 : v;
+}
 
 /**
  * Design u at horizontal position `s` across the calibrated area.

@@ -20,7 +20,7 @@
  *    mask below solves that without anyone hand-painting anything.
  */
 
-import { platePoint, plateU, plateFacing } from '@cupco/geometry';
+import { platePoint, plateU, plateV, plateFacing } from '@cupco/geometry';
 import type { PlateCalibration } from '@cupco/geometry';
 
 export interface MaskOptions {
@@ -154,6 +154,13 @@ export function warpDesignToPlate(
   const dw = design.width;
   const dh = design.height;
 
+  // Rows of the design that the calibrated band actually shows. A lidded cup
+  // hides the top of its own printable area, so the band is a WINDOW onto the
+  // design rather than the whole of it: take the slice, do not squash the lot
+  // into the gap.
+  const sy0 = (1 - plateV(0, cal)) * dh;
+  const sy1 = (1 - plateV(1, cal)) * dh;
+
   for (let i = 0; i < MESH_COLUMNS; i++) {
     const s0 = i / MESH_COLUMNS;
     const s1 = (i + 1) / MESH_COLUMNS;
@@ -181,10 +188,10 @@ export function warpDesignToPlate(
 
     // Two triangles per column strip.
     drawTriangle(ctx, design,
-      [sx0, 0, sx1, 0, sx0, dh],
+      [sx0, sy0, sx1, sy0, sx0, sy1],
       [tl.x, tl.y, tr.x, tr.y, bl.x, bl.y]);
     drawTriangle(ctx, design,
-      [sx1, 0, sx1, dh, sx0, dh],
+      [sx1, sy0, sx1, sy1, sx0, sy1],
       [tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
   }
   ctx.globalAlpha = 1;
