@@ -27,6 +27,7 @@ import { runPreflight } from '@cupco/preflight';
 import { toPreflightDesign } from '@/lib/preflight-adapter';
 import PreflightPanel from '@/components/PreflightPanel';
 import QrStylePicker from '@/components/QrStylePicker';
+import MockupGallery from '@/components/MockupGallery';
 import Section from '@/components/Section';
 import StageToolbar from '@/components/StageToolbar';
 import { sampleColor, fillToTemplate, type EyedropTarget, type FillMode } from '@/lib/tools';
@@ -55,7 +56,7 @@ const CupViewer = dynamic(() => import('@/components/CupViewer'), {
   ),
 });
 
-type Tab = 'concepts' | 'design' | '3d' | 'fan';
+type Tab = 'concepts' | 'design' | '3d' | 'fan' | 'mockups';
 const EXPORT_DPIS = [300, 450, 600] as const;
 
 export default function Page() {
@@ -837,6 +838,7 @@ export default function Page() {
           <button data-active={tab === 'design'} onClick={() => setTab('design')}>Design</button>
           <button data-active={tab === '3d'} onClick={() => setTab('3d')}>3D Preview</button>
           <button data-active={tab === 'fan'} onClick={() => setTab('fan')}>Production Fan</button>
+          <button data-active={tab === 'mockups'} onClick={() => setTab('mockups')}>Mockups</button>
 
           <StageToolbar
             tab={tab}
@@ -851,6 +853,16 @@ export default function Page() {
         </nav>
 
         <div className={`stage stage--${tab === '3d' ? '3d' : tab}`}>
+          {tab === 'mockups' && (
+            <MockupGallery
+              design={design}
+              profile={profile}
+              geom={geom}
+              proofCmyk={proofCmyk}
+              projectName={projects.currentName}
+              onStatus={setStatus}
+            />
+          )}
           {tab === 'concepts' && (
             <ConceptGallery source={conceptSource} profile={profile}
               brandName={brandName} onApply={applyConcept} />

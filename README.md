@@ -8,11 +8,11 @@ engine**. There is no second, approximate mockup pipeline that could drift out o
 
 ## Status
 
-Roughly 15,300 lines of TypeScript across seven packages. **417 tests, all passing.**
+Roughly 16,500 lines of TypeScript across seven packages. **439 tests, all passing.**
 
 | Area | State | Tests |
 |---|---|---|
-| Geometry engine, real 8oz profile | ✅ | 88 |
+| Geometry engine, real 8oz profile, elevation | ✅ | 110 |
 | Fan rasteriser | ✅ | 18 |
 | Vector: SVG import, tracing, QR styles, CMYK | ✅ | 110 |
 | Concept generation (10 layouts) | ✅ | 35 |
@@ -20,6 +20,7 @@ Roughly 15,300 lines of TypeScript across seven packages. **417 tests, all passi
 | Preflight: 12 production rules | ✅ | 48 |
 | App: serialisation, snapping, uploads | ✅ | 67 |
 | 3D cup, graduated studio backdrop, turntable MP4 | ✅ | — |
+| 2D lifestyle mockups, five settings | ✅ | — |
 | Editing: undo, clipboard, guides, eyedropper | ✅ | — |
 | Vector CMYK PDF + SVG export | ✅ | — |
 
@@ -50,9 +51,10 @@ npm install
 npm run dev -w @cupco/web     # http://localhost:3000
 ```
 
-Four tabs: **Concepts** (ten generated layouts), **Design** (the logical canvas),
-**3D Preview** (rotate/zoom/pan the real 8oz cup), and **Production Fan** (the warped fan
-with its trim/bleed/safe/overlap dieline, and export).
+Five tabs: **Concepts** (ten generated layouts), **Design** (the logical canvas),
+**3D Preview** (rotate/zoom/pan the real 8oz cup), **Production Fan** (the warped fan
+with its trim/bleed/safe/overlap dieline, and export), and **Mockups** (the cup staged in
+five settings, for sending to customers).
 
 The sidebar holds what you *set* — project, preflight, cup, artwork, the selected element,
 inks, export — grouped into collapsible sections whose headers stay useful when closed
@@ -348,6 +350,54 @@ Vector export warps paths by **adaptive subdivision with a tolerance measured in
 millimetres** (default 0.02mm), so accuracy is a guarantee about the physical fan, not about pixels.
 Verified: an exported PDF contains **5 CMYK fill operators and 0 RGB operators**.
 
+## Mockups
+
+Five settings, rendered from the live design and downloadable as **1800px PNGs** — sized for
+an email or a deck slide, re-rendered at full size rather than upscaled from the card.
+
+| | |
+|---|---|
+| **Studio** | Clean seamless ground. The one to lead a proposal with. |
+| **On a table** | Warm timber, window light from the left. |
+| **To go** | Lidded, as it leaves the counter. |
+| **Café counter** | Polished stone with a reflection, café thrown out of focus. |
+| **Two up** | Front and reverse together — the half a single view cannot show. |
+
+### These are drawn, not photographed
+
+The settings are crafted surfaces, light and shadow — brand-presentation quality, not
+photographs. What matters more is that the **cup** is honest, because a customer approving a
+mockup and receiving a different-looking cup is a complaint that lands on Cupco:
+
+- Proportions come from the `CupProfile`, so an 8oz reads as an 8oz.
+- Artwork is mapped through the geometry engine, so it sits exactly where the fan puts it.
+- **The CMYK proof toggle applies here too.** With it on, the customer approves print colour
+  rather than screen colour.
+
+### The foreshortening is the point
+
+Artwork compresses towards the edges of a cup. Screen `x = r(v)·sin(φ)`, so equal steps around
+the circumference cover less and less width as the surface turns away — the centre of the face
+is magnified and the edges are squeezed. Stretching artwork flat across the silhouette instead
+is the single most common way a cup mockup looks wrong without anyone being able to say why.
+
+The cup is drawn as a **gather**, exactly like the production fan rasteriser: it walks the
+output pixels and asks each one which piece of the design it shows. Painting strips of artwork
+forward onto the shape leaves seams and spreads the design evenly across a curving surface.
+
+A single view can only ever show **half the circumference** — the rest is behind the cup. That
+is what "Two up" is for: it renders two cups half a turn apart.
+
+### No hand, and why
+
+There were three attempts at "in someone's hand": fingers across the face, fingers curling from
+the side, thumb-forward with fingertips past the far edge. All three looked cheap. Hands are
+unforgiving — everyone knows exactly what one looks like, so "nearly" reads as wrong, and a
+mockup that looks wrong is worse than one fewer mockup. A lid earned the slot instead.
+
+If a photographic hand is wanted, the cup renders to a transparent PNG and composites straight
+into a photograph.
+
 ## The 3D preview
 
 A studio product shot, not a viewport. The lighting is a real tabletop setup — a large soft key at
@@ -398,7 +448,7 @@ macOS Preview lists GIF frames rather than playing them, so the format meant to 
 ## Verify
 
 ```bash
-npx vitest run --root packages/geometry     # 88 tests
+npx vitest run --root packages/geometry     # 110 tests
 npx vitest run --root packages/render       # 18 tests
 npx vitest run --root packages/persistence  # 51 tests
 npx vitest run --root packages/preflight    # 48 tests

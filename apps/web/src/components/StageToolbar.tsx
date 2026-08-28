@@ -16,7 +16,7 @@ import type { VideoPresetId } from '@/lib/turntable';
 import { VIDEO_PRESETS } from '@/lib/turntable';
 
 export interface StageToolbarProps {
-  tab: 'concepts' | 'design' | '3d' | 'fan';
+  tab: 'concepts' | 'design' | '3d' | 'fan' | 'mockups';
   proofCmyk: boolean;
   onProofCmyk: () => void;
   showGuides: boolean;
@@ -35,20 +35,22 @@ export interface StageToolbarProps {
 export default function StageToolbar(p: StageToolbarProps) {
   if (p.tab === 'concepts') return null;
   const flat = p.tab === 'design' || p.tab === 'fan';
+  // The proof matters most on the mockups: those are what a customer approves.
+  const proofable = flat || p.tab === 'mockups';
 
   return (
     <div className="stagebar">
       {flat && (
-        <>
-          <button className={p.showGuides ? 'chip chip--on' : 'chip'} onClick={p.onShowGuides}
-            title="Trim, bleed, safe area and seam overlap">
-            Guides
-          </button>
-          <button className={p.proofCmyk ? 'chip chip--on' : 'chip'} onClick={p.onProofCmyk}
-            title="Preview the design as CMYK ink on cup board — an approximation, not a colour-managed proof">
-            CMYK proof
-          </button>
-        </>
+        <button className={p.showGuides ? 'chip chip--on' : 'chip'} onClick={p.onShowGuides}
+          title="Trim, bleed, safe area and seam overlap">
+          Guides
+        </button>
+      )}
+      {proofable && (
+        <button className={p.proofCmyk ? 'chip chip--on' : 'chip'} onClick={p.onProofCmyk}
+          title="Show the design as CMYK ink on cup board — an approximation, not a colour-managed proof">
+          CMYK proof
+        </button>
       )}
 
       {p.tab === '3d' && (

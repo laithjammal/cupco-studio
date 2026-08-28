@@ -13,3 +13,4 @@ export * from './fan';
 export * from './profiles';
 export * from './path-warp';
 export * from './template';
+export * from './elevation';
