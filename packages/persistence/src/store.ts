@@ -14,7 +14,7 @@
 
 import type {
   AssetId, AssetInfo, AssetKind, DesignVersion, DesignVersionSummary,
-  Project, ProjectSummary, StoredAsset,
+  Project, ProjectSummary, StoredAsset, StoredPlate,
 } from './types';
 
 /**
@@ -51,6 +51,13 @@ export interface ProjectStore {
   getVersion(id: string): Promise<DesignVersion | null>;
   saveVersion(version: DesignVersion): Promise<void>;
   deleteVersion(id: string): Promise<void>;
+
+  /**
+   * Mockup plates, shared across every project rather than owned by one.
+   */
+  listPlates(): Promise<StoredPlate[]>;
+  savePlate(plate: StoredPlate): Promise<void>;
+  deletePlate(id: string): Promise<void>;
 }
 
 /** Both halves together, which is how callers always want them. */

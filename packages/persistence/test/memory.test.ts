@@ -122,6 +122,41 @@ describe('project store', () => {
   });
 });
 
+describe('plates', () => {
+  const plate = (id: string, assetId: string): import('../src/index').StoredPlate => ({
+    id, name: `Plate ${id}`, assetId, widthPx: 1200, heightPx: 1500,
+    calibration: {
+      topLeft: { x: 0, y: 0 }, topRight: { x: 10, y: 0 },
+      bottomLeft: { x: 1, y: 10 }, bottomRight: { x: 9, y: 10 },
+      topBow: 2, bottomBow: 1, centreU: 0.5, visibleSpan: 0.5,
+    },
+    mask: { minBrightness: 0.45, maxSaturation: 0.22, edgeFade: 0.06, opacity: 1 },
+    createdAt: 100, updatedAt: 100,
+  });
+
+  it('saves and lists plates newest first', async () => {
+    const { projects } = createMemoryStorage();
+    await projects.savePlate({ ...plate('a', 'sha256-1'), createdAt: 100 });
+    await projects.savePlate({ ...plate('b', 'sha256-2'), createdAt: 900 });
+    expect((await projects.listPlates()).map((p) => p.id)).toEqual(['b', 'a']);
+  });
+
+  it('keeps plates when a project is deleted — they are a library, not project data', async () => {
+    const { projects } = createMemoryStorage();
+    await projects.saveProject(project('p1'));
+    await projects.savePlate(plate('a', 'sha256-1'));
+    await projects.deleteProject('p1');
+    expect(await projects.listPlates()).toHaveLength(1);
+  });
+
+  it('deletes a plate on request', async () => {
+    const { projects } = createMemoryStorage();
+    await projects.savePlate(plate('a', 'sha256-1'));
+    await projects.deletePlate('a');
+    expect(await projects.listPlates()).toHaveLength(0);
+  });
+});
+
 describe('versions', () => {
   it('lists newest ordinal first and only for the right project', async () => {
     const { projects } = createMemoryStorage();

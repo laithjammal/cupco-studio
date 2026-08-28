@@ -50,6 +50,12 @@ export async function sweepOrphanedAssets(
   const now = options.now ?? Date.now();
 
   const referenced = new Set<AssetId>();
+
+  // Plates hold a photograph each, and they are a library rather than project
+  // data - nothing in any design refers to them, so without this the sweep
+  // would delete every plate photo the first time it ran.
+  for (const plate of await projects.listPlates()) referenced.add(plate.assetId);
+
   for (const summary of await projects.listProjects()) {
     const project = await projects.getProject(summary.id);
     if (project) for (const id of assetIdsIn(project.design)) referenced.add(id);

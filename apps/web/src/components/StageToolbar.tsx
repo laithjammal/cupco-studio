@@ -26,6 +26,8 @@ export interface StageToolbarProps {
   onResetCamera: () => void;
   videoPreset: VideoPresetId;
   onVideoPreset: (p: VideoPresetId) => void;
+  mockupMode: 'photo' | 'rendered';
+  onMockupMode: (m: 'photo' | 'rendered') => void;
   onExportTurntable: () => void;
   busy: boolean;
   progress: string | null;
@@ -45,6 +47,16 @@ export default function StageToolbar(p: StageToolbarProps) {
           title="Trim, bleed, safe area and seam overlap">
           Guides
         </button>
+      )}
+      {p.tab === 'mockups' && (
+        <span className="stagebar__group">
+          <button className={p.mockupMode === 'photo' ? 'chip chip--on' : 'chip'}
+            onClick={() => p.onMockupMode('photo')}
+            title="Composite the artwork onto a photograph of a real cup">Photo</button>
+          <button className={p.mockupMode === 'rendered' ? 'chip chip--on' : 'chip'}
+            onClick={() => p.onMockupMode('rendered')}
+            title="Drawn scenes — no photograph needed, but not photographic">Rendered</button>
+        </span>
       )}
       {proofable && (
         <button className={p.proofCmyk ? 'chip chip--on' : 'chip'} onClick={p.onProofCmyk}

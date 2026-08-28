@@ -22,14 +22,20 @@
 import { hashBytes, StorageQuotaError } from '@cupco/persistence';
 import type {
   AssetId, AssetInfo, AssetKind, AssetStore, DesignVersion, DesignVersionSummary,
-  Project, ProjectStore, StoredAsset, Storage as CupcoStorage,
+  Project, ProjectStore, StoredAsset, StoredPlate, Storage as CupcoStorage,
 } from '@cupco/persistence';
 
 const DB_NAME = 'cupco-studio';
-const DB_VERSION = 1;
+/**
+ * 2 added the `plates` store. The upgrade is additive - existing projects,
+ * versions and assets are untouched - so an existing database opens and keeps
+ * everything it had.
+ */
+const DB_VERSION = 2;
 const PROJECTS = 'projects';
 const VERSIONS = 'versions';
 const ASSETS = 'assets';
+const PLATES = 'plates';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -53,6 +59,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(ASSETS)) {
         db.createObjectStore(ASSETS, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(PLATES)) {
+        db.createObjectStore(PLATES, { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -217,6 +226,21 @@ class IdbProjectStore implements ProjectStore {
     await tx(VERSIONS, 'readwrite', async (t) => {
       await wrap(t.objectStore(VERSIONS).delete(id));
     });
+  }
+
+  async listPlates(): Promise<StoredPlate[]> {
+    return tx(PLATES, 'readonly', async (t) => {
+      const all = await wrap<StoredPlate[]>(t.objectStore(PLATES).getAll());
+      return all.sort((a, b) => b.createdAt - a.createdAt);
+    });
+  }
+
+  async savePlate(plate: StoredPlate): Promise<void> {
+    await tx(PLATES, 'readwrite', async (t) => { await wrap(t.objectStore(PLATES).put(plate)); });
+  }
+
+  async deletePlate(id: string): Promise<void> {
+    await tx(PLATES, 'readwrite', async (t) => { await wrap(t.objectStore(PLATES).delete(id)); });
   }
 }
 

@@ -17,7 +17,7 @@ import { hashBytes } from './hash';
 import type { AssetStore, ProjectStore, Storage } from './store';
 import type {
   AssetId, AssetInfo, AssetKind, DesignVersion, DesignVersionSummary,
-  Project, ProjectSummary, StoredAsset,
+  Project, ProjectSummary, StoredAsset, StoredPlate,
 } from './types';
 
 const clone = <T>(value: T): T => structuredClone(value);
@@ -67,6 +67,7 @@ export class MemoryAssetStore implements AssetStore {
 export class MemoryProjectStore implements ProjectStore {
   private readonly projects = new Map<string, Project>();
   private readonly versions = new Map<string, DesignVersion>();
+  private readonly plates = new Map<string, StoredPlate>();
 
   async listProjects(): Promise<ProjectSummary[]> {
     return [...this.projects.values()]
@@ -109,6 +110,18 @@ export class MemoryProjectStore implements ProjectStore {
 
   async deleteVersion(id: string): Promise<void> {
     this.versions.delete(id);
+  }
+
+  async listPlates(): Promise<StoredPlate[]> {
+    return [...this.plates.values()].map(clone).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  async savePlate(plate: StoredPlate): Promise<void> {
+    this.plates.set(plate.id, clone(plate));
+  }
+
+  async deletePlate(id: string): Promise<void> {
+    this.plates.delete(id);
   }
 }
 

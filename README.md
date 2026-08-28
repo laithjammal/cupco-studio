@@ -8,19 +8,20 @@ engine**. There is no second, approximate mockup pipeline that could drift out o
 
 ## Status
 
-Roughly 16,500 lines of TypeScript across seven packages. **439 tests, all passing.**
+Roughly 17,600 lines of TypeScript across seven packages. **464 tests, all passing.**
 
 | Area | State | Tests |
 |---|---|---|
-| Geometry engine, real 8oz profile, elevation | ✅ | 110 |
+| Geometry engine, 8oz profile, elevation, plates | ✅ | 131 |
 | Fan rasteriser | ✅ | 18 |
 | Vector: SVG import, tracing, QR styles, CMYK | ✅ | 110 |
 | Concept generation (10 layouts) | ✅ | 35 |
-| Persistence: assets, migration, GC | ✅ | 51 |
+| Persistence: assets, migration, GC, plates | ✅ | 55 |
 | Preflight: 12 production rules | ✅ | 48 |
 | App: serialisation, snapping, uploads | ✅ | 67 |
 | 3D cup, graduated studio backdrop, turntable MP4 | ✅ | — |
-| 2D lifestyle mockups, five settings | ✅ | — |
+| Photo mockups: artwork composited onto real cups | ✅ | — |
+| Drawn mockups, five settings | ✅ | — |
 | Editing: undo, clipboard, guides, eyedropper | ✅ | — |
 | Vector CMYK PDF + SVG export | ✅ | — |
 
@@ -352,8 +353,42 @@ Verified: an exported PDF contains **5 CMYK fill operators and 0 RGB operators**
 
 ## Mockups
 
-Five settings, rendered from the live design and downloadable as **1800px PNGs** — sized for
-an email or a deck slide, re-rendered at full size rather than upscaled from the card.
+Two modes, switched from the tab bar.
+
+### Photo — genuinely photographic
+
+Composites the artwork onto a **photograph of a real blank cup**. This is how commercial mockup
+templates work, and it is the only route to a photographic result: the table, the light, the
+shadows, the hand and the out-of-focus background are all real. All the app does is put the
+artwork on the cup that is already in the picture.
+
+**You supply the plates** — photograph a plain white cup in whatever settings you want to sell
+in. Each is calibrated once, by dragging six handles: four to the corners of the printable
+area, two to make the top and bottom edges follow the cup's curve. The calibration is saved
+with the plate, so it then works for every customer's artwork.
+
+Three things make it look real rather than pasted:
+
+| | |
+|---|---|
+| **Shape** | Warped through the geometry engine, so artwork compresses towards the silhouette as it does on a real cup. A perspective transform cannot do this — a cup is neither flat nor a quadrilateral. |
+| **Light** | The artwork is **multiplied** into the photograph, not drawn over it. Every highlight, shadow and bit of board texture survives underneath. Ink on paper darkens what is below it, so multiply is not a convenient blend mode — it is what ink does. |
+| **What is in front** | Fingers, lids and straws crossing the cup stay in front, automatically. |
+
+That last one is the trick worth knowing. A pixel is bare cup board if it is **bright and
+neutral**. A white cup is both; skin is bright but distinctly warm; a black lid is neutral but
+dark. One cheap test separates the cup from the two things most likely to be in front of it,
+with no mask to paint and nothing for the operator to get wrong. Two sliders tune it if a plate
+is unusual.
+
+Good plates: a plain **unprinted** white cup (artwork multiplies onto it, so anything already
+there shows through), even light with no hard shadow line across the face, and square-on to the
+cup where possible — a strong angle needs the visible-wrap control turned down.
+
+### Rendered — no photograph needed
+
+Five drawn settings, downloadable as **1800px PNGs**, re-rendered at full size rather than
+upscaled from the card.
 
 | | |
 |---|---|
@@ -363,11 +398,10 @@ an email or a deck slide, re-rendered at full size rather than upscaled from the
 | **Café counter** | Polished stone with a reflection, café thrown out of focus. |
 | **Two up** | Front and reverse together — the half a single view cannot show. |
 
-### These are drawn, not photographed
-
-The settings are crafted surfaces, light and shadow — brand-presentation quality, not
-photographs. What matters more is that the **cup** is honest, because a customer approving a
-mockup and receiving a different-looking cup is a complaint that lands on Cupco:
+These are crafted surfaces, light and shadow — brand-presentation quality, not photographs.
+Use them before you have plates, or where a plain studio shot is what is wanted. What matters
+more is that the **cup** is honest, because a customer approving a mockup and receiving a
+different-looking cup is a complaint that lands on Cupco:
 
 - Proportions come from the `CupProfile`, so an 8oz reads as an 8oz.
 - Artwork is mapped through the geometry engine, so it sits exactly where the fan puts it.
@@ -448,7 +482,7 @@ macOS Preview lists GIF frames rather than playing them, so the format meant to 
 ## Verify
 
 ```bash
-npx vitest run --root packages/geometry     # 110 tests
+npx vitest run --root packages/geometry     # 131 tests
 npx vitest run --root packages/render       # 18 tests
 npx vitest run --root packages/persistence  # 51 tests
 npx vitest run --root packages/preflight    # 48 tests

@@ -197,3 +197,46 @@ export interface DesignVersion {
 }
 
 export type DesignVersionSummary = Omit<DesignVersion, 'design'>;
+
+/* -------------------------------------------------------------------------- */
+/* Mockup plates                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A photograph of a BLANK cup, with the calibration that says where the cup is
+ * in it and how it curves.
+ *
+ * Plates are a library, not project data: a good photograph of a cup in a hand
+ * is worth using for every customer, so they live in their own store rather
+ * than inside whichever project happened to be open when it was uploaded.
+ *
+ * The calibration is stored as plain numbers rather than the geometry engine's
+ * type, so this package keeps its own shape and does not have to move whenever
+ * the engine's does.
+ */
+export interface StoredPlate {
+  id: string;
+  name: string;
+  /** Content hash of the photograph in the asset store. */
+  assetId: AssetId;
+  widthPx: number;
+  heightPx: number;
+  calibration: {
+    topLeft: { x: number; y: number };
+    topRight: { x: number; y: number };
+    bottomLeft: { x: number; y: number };
+    bottomRight: { x: number; y: number };
+    topBow: number;
+    bottomBow: number;
+    centreU: number;
+    visibleSpan: number;
+  };
+  mask: {
+    minBrightness: number;
+    maxSaturation: number;
+    edgeFade: number;
+    opacity: number;
+  };
+  createdAt: number;
+  updatedAt: number;
+}

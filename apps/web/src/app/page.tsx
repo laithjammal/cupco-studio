@@ -28,6 +28,7 @@ import { toPreflightDesign } from '@/lib/preflight-adapter';
 import PreflightPanel from '@/components/PreflightPanel';
 import QrStylePicker from '@/components/QrStylePicker';
 import MockupGallery from '@/components/MockupGallery';
+import PlateStudio from '@/components/PlateStudio';
 import Section from '@/components/Section';
 import StageToolbar from '@/components/StageToolbar';
 import { sampleColor, fillToTemplate, type EyedropTarget, type FillMode } from '@/lib/tools';
@@ -81,6 +82,7 @@ export default function Page() {
   const [eyedrop, setEyedrop] = useState<EyedropTarget | null>(null);
   const [fontsReady, setFontsReady] = useState(false);
   const [brandName, setBrandName] = useState('');
+  const [mockupMode, setMockupMode] = useState<'photo' | 'rendered'>('photo');
   /**
    * Internal clipboard.
    *
@@ -847,13 +849,22 @@ export default function Page() {
             spin={spin} onSpin={() => setSpin((v) => !v)}
             onResetCamera={() => setResetToken((t) => t + 1)}
             videoPreset={videoPreset} onVideoPreset={setVideoPreset}
+            mockupMode={mockupMode} onMockupMode={setMockupMode}
             onExportTurntable={exportVideo}
             busy={busy} progress={recordProgress} videoExt={videoExt}
           />
         </nav>
 
         <div className={`stage stage--${tab === '3d' ? '3d' : tab}`}>
-          {tab === 'mockups' && (
+          {tab === 'mockups' && (mockupMode === 'photo' ? (
+            <PlateStudio
+              design={design}
+              profile={profile}
+              proofCmyk={proofCmyk}
+              projectName={projects.currentName}
+              onStatus={setStatus}
+            />
+          ) : (
             <MockupGallery
               design={design}
               profile={profile}
@@ -862,7 +873,7 @@ export default function Page() {
               projectName={projects.currentName}
               onStatus={setStatus}
             />
-          )}
+          ))}
           {tab === 'concepts' && (
             <ConceptGallery source={conceptSource} profile={profile}
               brandName={brandName} onApply={applyConcept} />

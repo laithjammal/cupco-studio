@@ -111,6 +111,29 @@ describe('sweepOrphanedAssets', () => {
       { now: later(), minAgeMs: 30 * 60 * 1000 })).deleted).toEqual([id]);
   });
 
+  it('SPARES a plate photograph, which no design refers to', async () => {
+    // Plates are a library: nothing in any design points at their photo, so
+    // without an explicit reference the sweep would delete every plate the
+    // first time it ran.
+    const storage = createMemoryStorage();
+    const photo = await storage.assets.put('image', new Uint8Array([1, 2, 3, 4]));
+    await storage.projects.savePlate({
+      id: 'plate-1', name: 'In hand', assetId: photo,
+      widthPx: 100, heightPx: 100,
+      calibration: {
+        topLeft: { x: 0, y: 0 }, topRight: { x: 1, y: 0 },
+        bottomLeft: { x: 0, y: 1 }, bottomRight: { x: 1, y: 1 },
+        topBow: 0, bottomBow: 0, centreU: 0.5, visibleSpan: 0.5,
+      },
+      mask: { minBrightness: 0.45, maxSaturation: 0.22, edgeFade: 0.06, opacity: 1 },
+      createdAt: 0, updatedAt: 0,
+    });
+
+    const result = await sweepOrphanedAssets(storage.projects, storage.assets, { now: later() });
+    expect(result.deleted).toEqual([]);
+    expect(await storage.assets.has(photo)).toBe(true);
+  });
+
   it('reclaims a deleted project\'s assets but keeps a shared one', async () => {
     // Deduplication means two projects can point at the same bytes. Deleting
     // one must not strip the logo from the other.
