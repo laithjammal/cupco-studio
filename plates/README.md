@@ -41,16 +41,31 @@ Adding a plate runs the fit: the cup is located in the photograph and the handle
 it. The six handles remain for adjustment, and dragging one marks the plate as hand-fitted so
 the automatic fit never overwrites it. **Auto-fit** re-runs it.
 
-On `mockup-3.png` the automatic fit lands within about 1% of the silhouette measured by hand,
-and errs *inside* the cup — the safe direction, since overshooting puts artwork on the counter.
+On `mockup-3.png` every corner lands within 2px of the silhouette measured by hand, and the
+top edge within 1px. Run `npx tsx apps/web/scripts/check-plate-fit.ts` to print the comparison.
 
 | corner | automatic | measured by hand |
 |---|---|---|
-| top left | 500, 633 | 505, 620 |
-| top right | 816, 633 | 832, 616 |
-| bottom left | 541, 943 | 551, 934 |
-| bottom right | 775, 943 | 779, 930 |
+| top left | 508, 612 | 510, 612 |
+| top right | 828, 611 | 830, 609 |
+| bottom left | 548, 943 | 548, 943 |
+| bottom right | 778, 943 | 778, 943 |
 
-One thing to watch on this plate: the terrazzo counter is bright and neutral, just like the
-cup, so the mask cannot tell them apart. The calibration has to sit on the cup — overshoot and
-artwork will spill onto the bench.
+Composited, that means nothing at all is painted onto the lid, onto the counter, or past
+either silhouette, and the widest strip of bare cup left anywhere along an edge is 2px.
+
+Two things to watch on this plate:
+
+- The terrazzo counter is bright and neutral, just like the cup, so the mask cannot tell them
+  apart. The calibration has to sit on the cup — overshoot and artwork will spill onto the
+  bench, and nothing downstream will catch it.
+- The panelling behind the cup's shaded left side produces long runs of convincing false
+  edges. They are rejected, but it is the reason the fit sifts each side by least median of
+  squares rather than by distance from a median.
+
+### If a fit looks wrong
+
+Drag the handles; that marks the plate hand-fitted and the automatic fit will leave it alone
+from then on. **Auto-fit** re-runs it and discards the manual adjustment. A calibration saved
+before the fit was improved keeps whatever it was saved with — press **Auto-fit** once to take
+up the current one.

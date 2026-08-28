@@ -8,7 +8,7 @@ engine**. There is no second, approximate mockup pipeline that could drift out o
 
 ## Status
 
-Roughly 17,600 lines of TypeScript across seven packages. **464 tests, all passing.**
+Roughly 17,600 lines of TypeScript across seven packages. **472 tests, all passing.**
 
 | Area | State | Tests |
 |---|---|---|
@@ -18,7 +18,7 @@ Roughly 17,600 lines of TypeScript across seven packages. **464 tests, all passi
 | Concept generation (10 layouts) | ✅ | 35 |
 | Persistence: assets, migration, GC, plates | ✅ | 55 |
 | Preflight: 12 production rules | ✅ | 48 |
-| App: serialisation, snapping, uploads | ✅ | 67 |
+| App: serialisation, snapping, uploads, plate fitting | ✅ | 75 |
 | 3D cup, graduated studio backdrop, turntable MP4 | ✅ | — |
 | Photo mockups: artwork composited onto real cups | ✅ | — |
 | Drawn mockups, five settings | ✅ | — |
@@ -379,6 +379,32 @@ unusable: on a lit-from-the-right photograph the shaded left edge simply has no 
 below the midpoint. Fitting the sides independently threw away the good side along with the bad
 and under-tapered the cup by 35px.
 
+Each side is sifted by **least median of squares** before any of that — the line that explains
+the most samples wins, and the rest are dropped. Trimming outliers by their distance from a
+median, which is what this did, assumes they are a scattered minority; behind a cup's shaded
+side they are neither. There, whole runs of rows lock onto the same wrong thing — a strip of
+panelling, the far edge of a shadow — and agree with each other well enough to pass for signal.
+On this plate that gate rejects a third of the left-hand samples.
+
+Two consequences follow from having clean samples:
+
+- **The silhouette is read at the half-way point of its transition**, not at the first pixel
+  that shows one. The first pixel sits about 1.5px inside the cup on *every* row, and a bias
+  survives any amount of averaging — it arrives intact in the finished fit as a bare strip.
+- **The axis is allowed to lean.** Holding it vertical was the safe choice while the samples
+  were dirty, because a few false edges could tilt a fitted line and drag the whole cup with
+  it. But cups do lean: this one leans by less than a degree, and forcing it upright cost 8px
+  at the rim — artwork hanging off one side while a bare strip showed on the other.
+
+**The top edge comes from the lid**, traced across the full width of the cup and fitted as the
+arc it is. It used to be measured down the centre column and handed to the corners, which put
+the whole edge a lid's sag too low — and then `topBow` pushed the middle lower again, counting
+the same sag twice. Twenty pixels of bare cup under the lid, widest where the eye goes first.
+
+Against a silhouette measured by hand off the supplied plate, every corner now lands within
+2px and the top edge within 1px; nothing is painted onto the lid, the counter, or past either
+edge. `npx tsx apps/web/scripts/check-plate-fit.ts` prints that comparison.
+
 You can zoom the plate view (**− / % / +**, or ⌘-scroll) to place handles precisely.
 
 Three things make it look real rather than pasted:
@@ -509,13 +535,15 @@ macOS Preview lists GIF frames rather than playing them, so the format meant to 
 ```bash
 npx vitest run --root packages/geometry     # 131 tests
 npx vitest run --root packages/render       # 18 tests
-npx vitest run --root packages/persistence  # 51 tests
+npx vitest run --root packages/persistence  # 55 tests
 npx vitest run --root packages/preflight    # 48 tests
 npx vitest run --root packages/vector       # 110 tests, incl. QR decode
+npx vitest run --root apps/web              # 75 tests, incl. finding a cup in a plate
 npx tsx packages/vector/scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg
 npx tsx packages/geometry/scripts/report-profile.ts 8oz-single-wall
 npx tsx packages/geometry/scripts/emit-fan-svg.ts 8oz-single-wall out/8oz-fan.svg
 npx tsx packages/render/scripts/export-check.ts
+npx tsx apps/web/scripts/check-plate-fit.ts  # the plate fit, against a hand-measured cup
 ```
 
 The decisive check is physical: print `out/8oz-fan.svg` at 100%, cut it out, wrap a real 8oz cup.
