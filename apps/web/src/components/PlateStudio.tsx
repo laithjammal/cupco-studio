@@ -63,6 +63,19 @@ export default function PlateStudio({
   const dragRef = useRef<HandleId | null>(null);
   const current = plates.find((p) => p.id === currentId) ?? null;
 
+  /**
+   * The plate list, reachable from effects without being a dependency.
+   *
+   * `current` is the result of a find() over state, so it is a NEW object every
+   * time the list is replaced - and saving replaces the list. Depending on it
+   * directly made every save re-run the loader, which re-decoded the photograph
+   * and reset the calibration out from under whoever was dragging it. Effects
+   * key on the plate's ID instead, and read the record through here.
+   */
+  const platesRef = useRef<StoredPlate[]>([]);
+  platesRef.current = plates;
+  const currentAssetId = current?.assetId ?? null;
+
   /* ---- load the plate library ------------------------------------------ */
   const refresh = useCallback(async () => {
     const list = await getStorage().projects.listPlates();
@@ -75,9 +88,17 @@ export default function PlateStudio({
   /* ---- decode the selected plate's photograph --------------------------- */
   useEffect(() => {
     let dead = false;
-    if (!current) { setImage(null); setCal(null); return; }
+    if (!currentId || !currentAssetId) { setImage(null); setCal(null); return; }
+    const plate = platesRef.current.find((p) => p.id === currentId);
+    if (!plate) return;
+
+    // Adopt the saved fit immediately, so the handles are in place before the
+    // photograph has finished decoding.
+    setCal(plate.calibration as PlateCalibration);
+    setMask(plate.mask);
+
     void (async () => {
-      const asset = await getStorage().assets.get(current.assetId);
+      const asset = await getStorage().assets.get(currentAssetId);
       if (!asset || dead) return;
       const blob = new Blob([new Uint8Array(asset.bytes)], { type: asset.contentType ?? 'image/jpeg' });
       const url = URL.createObjectURL(blob);
@@ -87,11 +108,9 @@ export default function PlateStudio({
       URL.revokeObjectURL(url);
       if (dead) return;
       setImage(img);
-      setCal(current.calibration as PlateCalibration);
-      setMask(current.mask);
     })();
     return () => { dead = true; };
-  }, [current]);
+  }, [currentId, currentAssetId]);
 
   /** Is the design's background just bare cup board? */
   const backgroundIsPaper = useMemo(() => {

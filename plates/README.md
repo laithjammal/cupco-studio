@@ -26,10 +26,30 @@ so each photograph is set up once and then works for every customer's artwork.
 
 | File | Notes |
 |---|---|
-| `hand-lidded.png` | 1337×1177. Held, lidded, concrete background. Calibrated and verified. |
+| `mockup-3.png` | 1329×1183. Lidded, on a terrazzo counter, café behind. **The better plate** — nothing in front of the cup, even light, and a setting that flatters a design. |
+| `hand-lidded.png` | 1337×1177. Held, lidded, concrete background. Shows scale, but the fingers crop the wrap. |
 
-Calibration is saved in the browser, so it survives reloads but not clearing site data. The
-measured values for `hand-lidded.png`, if they ever need re-entering:
+### mockup-3.png
+
+```
+topLeft     505, 620        topBow       8
+topRight    832, 616        bottomBow   18
+bottomLeft  551, 934        centreU      0.5
+bottomRight 779, 930        visibleSpan  0.5
+```
+
+Measured: wall from y≈617 under the lid to y≈950 at the base; silhouette 510–826 at y=660,
+narrowing to 551–779 near the bottom.
+
+One thing to watch on this plate: the terrazzo counter is bright and neutral, just like the
+cup, so the mask cannot tell them apart. The calibration has to sit on the cup — overshoot and
+artwork will spill onto the bench. On the hand plate the opposite was true: fingers and lid are
+easy to reject, so the calibration could be generous.
+
+### hand-lidded.png
+
+Calibration is saved in the browser, so it survives reloads but not clearing site data. Measured
+values, if they ever need re-entering:
 
 ```
 topLeft     521, 497        topBow      16
