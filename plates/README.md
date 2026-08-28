@@ -28,6 +28,20 @@ so each photograph is set up once and then works for every customer's artwork.
 |---|---|
 | `hand-lidded.png` | 1337×1177. Held, lidded, concrete background. Calibrated and verified. |
 
+Calibration is saved in the browser, so it survives reloads but not clearing site data. The
+measured values for `hand-lidded.png`, if they ever need re-entering:
+
+```
+topLeft     521, 497        topBow      16
+topRight    823, 483        bottomBow   18
+bottomLeft  561, 797        centreU     0.5
+bottomRight 777, 791        visibleSpan 0.5
+```
+
+These come from scanning the photograph, not from eyeballing it: the cup wall runs from
+y≈475 under the lid to y≈813 at the base, spanning x 530–811 at mid-height and 561–776 near
+the bottom.
+
 `hand-lidded.png` is a generated image rather than a photograph of a real Cupco cup. It works
 well as a plate, but for customer-facing work it is worth shooting the **actual product** — the
 credibility of a mockup rests on the cup in it being the cup they will receive, and a generated

@@ -374,7 +374,17 @@ Three things make it look real rather than pasted:
 | **Shape** | Warped through the geometry engine, so artwork compresses towards the silhouette as it does on a real cup. A perspective transform cannot do this — a cup is neither flat nor a quadrilateral. |
 | **Light** | The artwork is **multiplied** into the photograph, not drawn over it. Every highlight, shadow and bit of board texture survives underneath. Ink on paper darkens what is below it, so multiply is not a convenient blend mode — it is what ink does. |
 | **What is in front** | Fingers, lids and straws crossing the cup stay in front, automatically. |
-| **The paper** | The design's background is *not* painted onto the plate. The cup's own paper is right there in the photograph, with its real shading and texture — covering it with a flat panel puts a visible edge on the cup and the artwork stops reading as printed and starts reading as a sticker. Turn **Cup colour** on when the design genuinely calls for a coloured cup. |
+| **The paper** | Whether the design's background is printed is decided **from the design**. A near-white background is bare cup board and is dropped, so the photograph's own shading and texture show through — painting a flat panel over them makes the artwork read as a sticker. Any other background is a deliberate colour choice and is printed. **Cup colour** overrides it either way. |
+
+Getting that last one wrong is silent in *both* directions, which is why it is automatic: a
+white background painted onto a photographed cup lays a flat panel over its real shading, while
+a coloured background skipped leaves the cup bare and the design looking like it has lost half
+of itself.
+
+The mask thresholds are measured, not guessed. On the supplied plate, bare cup — including its
+shaded edge — runs to **0.27 saturation**, and skin starts at **0.36**. The default sits at
+0.32, in the gap. An earlier 0.22 sat inside the *cup's* own range and was quietly eating
+artwork off the shaded side, which is exactly where a coloured design failed to reach the edge.
 
 That last one is the trick worth knowing. A pixel is bare cup board if it is **bright and
 neutral**. A white cup is both; skin is bright but distinctly warm; a black lid is neutral but

@@ -42,7 +42,20 @@ export default function PlateStudio({
   const [cal, setCal] = useState<PlateCalibration | null>(null);
   const [mask, setMask] = useState<MaskOptions>(DEFAULT_MASK);
   const [showHandles, setShowHandles] = useState(true);
-  const [cupColour, setCupColour] = useState(false);
+  /**
+   * Whether to print the design's background onto the cup.
+   *
+   * Decided from the design rather than left to the operator, because getting
+   * it wrong is silent in both directions: a white background painted onto a
+   * photographed cup lays a flat panel over its real shading and the artwork
+   * reads as a sticker, while a coloured background SKIPPED leaves the cup bare
+   * and the design looking like it has lost half of itself.
+   *
+   * Near-paper backgrounds are the cup's own board and are dropped; anything
+   * else is a deliberate colour choice and is printed. `null` means follow the
+   * design; true/false is an operator override.
+   */
+  const [cupColourOverride, setCupColourOverride] = useState<boolean | null>(null);
   const [coverage, setCoverage] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -79,6 +92,19 @@ export default function PlateStudio({
     })();
     return () => { dead = true; };
   }, [current]);
+
+  /** Is the design's background just bare cup board? */
+  const backgroundIsPaper = useMemo(() => {
+    const hex = design.background.replace('#', '');
+    const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+    const n = parseInt(full, 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const max = Math.max(r, g, b) / 255, min = Math.min(r, g, b) / 255;
+    const sat = max <= 0 ? 0 : (max - min) / max;
+    return max > 0.9 && sat < 0.06;
+  }, [design.background]);
+
+  const cupColour = cupColourOverride ?? !backgroundIsPaper;
 
   /* ---- the design, rendered once per change ----------------------------- */
   const designCanvas = useMemo(() => {
@@ -280,9 +306,11 @@ export default function PlateStudio({
             <button className={showHandles ? 'chip chip--on' : 'chip'}
               onClick={() => setShowHandles((v) => !v)}>Handles</button>
             <button className={cupColour ? 'chip chip--on' : 'chip'}
-              onClick={() => setCupColour((v) => !v)}
-              title="Off: the cup's own paper shows through, which is what a printed white cup looks like. On: the design's background colour is printed over the whole cup.">
-              Cup colour
+              onClick={() => setCupColourOverride(!cupColour)}
+              title={backgroundIsPaper
+                ? "The design's background is bare board, so the cup's own paper shows through. Turn on only if you want it printed white."
+                : "The design has a coloured background, so it is printed onto the cup. Turn off to show the cup's own paper instead."}>
+              Cup colour{cupColourOverride === null ? '' : ' ·'}
             </button>
             <button className="chip chip--primary" onClick={() => void download()} disabled={busy}>
               {busy ? 'Working…' : 'Download JPG'}
@@ -347,10 +375,15 @@ export default function PlateStudio({
               format={(v) => v.toFixed(2)}
               hint="Raise until the artwork stops climbing onto a dark lid." />
 
-            <Slider label="Keep off skin" value={mask.maxSaturation} min={0.05} max={0.5} step={0.01}
+            <Slider label="Keep off skin" value={mask.maxSaturation} min={0.05} max={0.6} step={0.01}
               onChange={(v) => setMask((m) => ({ ...m, maxSaturation: v }))} onCommit={persist}
               format={(v) => v.toFixed(2)}
-              hint="Lower until the artwork stops climbing onto fingers." />
+              hint="Lower until artwork stops climbing onto fingers; raise if it is being eaten off the cup's shaded edge." />
+
+            <Slider label="Reach to the edges" value={0.08 - mask.edgeFade} min={0} max={0.08} step={0.002}
+              onChange={(v) => setMask((m) => ({ ...m, edgeFade: 0.08 - v }))} onCommit={persist}
+              format={(v) => (v > 0.072 ? 'full' : `${Math.round((v / 0.08) * 100)}%`)}
+              hint="How close a coloured design gets to the silhouette. Pull back only if artwork spills onto the background." />
 
             {coverage !== null && (
               <div className="hint">

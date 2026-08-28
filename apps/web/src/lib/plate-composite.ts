@@ -34,10 +34,28 @@ export interface MaskOptions {
   opacity: number;
 }
 
+/**
+ * Defaults measured off a real plate rather than guessed.
+ *
+ * Sampling the supplied hand-held photograph:
+ *
+ *   bare cup, including its shaded edge   saturation 0.01 - 0.27
+ *   skin                                  saturation 0.36 - 0.52
+ *
+ * There is a clean gap between them, and the original 0.22 sat squarely inside
+ * the CUP's range - so the mask was cutting artwork off the cup's shaded left
+ * side, which is exactly where a coloured design was failing to reach the
+ * edge. 0.32 lands in the gap with margin on both sides.
+ *
+ * The edge fade was 0.06, which pulled artwork a visible distance back from
+ * the silhouette on both sides. It exists only to stop artwork spilling onto
+ * the background if the calibration overshoots the cup, so it needs to be
+ * barely more than an antialiasing feather.
+ */
 export const DEFAULT_MASK: MaskOptions = {
-  minBrightness: 0.45,
-  maxSaturation: 0.22,
-  edgeFade: 0.06,
+  minBrightness: 0.40,
+  maxSaturation: 0.32,
+  edgeFade: 0.015,
   opacity: 1,
 };
 
@@ -63,7 +81,9 @@ function cupness(r: number, g: number, b: number, o: MaskOptions): number {
   const min = Math.min(r, g, b) / 255;
   const sat = max <= 0 ? 0 : (max - min) / max;
   const bright = smoothstep(o.minBrightness - 0.12, o.minBrightness + 0.12, max);
-  const neutral = 1 - smoothstep(o.maxSaturation - 0.06, o.maxSaturation + 0.06, sat);
+  // A narrow transition: cup and skin are well separated in saturation, so a
+  // wide ramp only eats into one or the other for no benefit.
+  const neutral = 1 - smoothstep(o.maxSaturation - 0.04, o.maxSaturation + 0.04, sat);
   return bright * neutral;
 }
 
