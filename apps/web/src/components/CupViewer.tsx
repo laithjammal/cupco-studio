@@ -22,7 +22,7 @@
 
 import { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, ContactShadows, SoftShadows, Backdrop } from '@react-three/drei';
+import { OrbitControls, ContactShadows, SoftShadows } from '@react-three/drei';
 import * as THREE from 'three';
 import type { FrustumGeometry, CupProfile } from '@cupco/geometry';
 import { pickVideoMime, type RecordTurntable, type VideoResult } from '@/lib/turntable';
@@ -196,14 +196,15 @@ function CameraRig({ geom, resetToken }: { geom: FrustumGeometry; resetToken: nu
  * the product from the ground without an outline. A single flat grey, which is
  * what this was, reads as a render precisely because nothing falls off.
  *
- * Two textures, because they do different jobs:
+ * It is screen-space, behind everything, and anchored to the FRAME rather than
+ * the world - so the vignette stays put while the camera orbits, exactly as a
+ * real backdrop gradient would.
  *
- *   background - screen-space, behind everything. Anchored to the FRAME rather
- *                than the world, so the vignette stays put while the camera
- *                orbits, exactly as a real backdrop gradient would.
- *   sweep      - mapped onto the physical curved sweep that catches the
- *                contact shadow, so the shadow falls across a graded surface
- *                instead of a uniform one.
+ * There was a curved sweep here as well, a physical mesh the shadow fell
+ * across. It is gone: however seamless it is meant to look, the arc where it
+ * turned up into the back wall was visible as a line across the frame, and a
+ * line is worse than the flatness it was there to avoid. The cup is grounded by
+ * its contact shadow instead, which needs no geometry behind it.
  *
  * The warm centre against cool corners is deliberate. Equal-temperature greys
  * look flat however you ramp them; a little colour contrast is most of what
@@ -242,22 +243,12 @@ function makeGradient(
  */
 const EDGE = '#8ca0b8';
 
-function useStudioTextures() {
-  return useMemo(() => {
-    const background = makeGradient([
-      [0, '#fcfbf9'],   // warm pool of light, just above the cup
-      [0.38, '#dde5ee'],
-      [1, EDGE],        // cool falloff into the corners
-    ], 0.5, 0.38);
-
-    const sweep = makeGradient([
-      [0, '#ffffff'],
-      [0.5, '#eaeff5'],
-      [1, '#c4cfdc'],
-    ], 0.5, 0.62);
-
-    return { background, sweep };
-  }, []);
+function useBackdropTexture() {
+  return useMemo(() => makeGradient([
+    [0, '#fcfbf9'],   // warm pool of light, just above the cup
+    [0.38, '#dde5ee'],
+    [1, EDGE],        // cool falloff into the corners
+  ], 0.5, 0.38), []);
 }
 
 /**
@@ -282,23 +273,13 @@ function SceneBackground({ texture }: { texture: THREE.Texture }) {
  * Modelled on a real tabletop setup rather than "some lights": a large soft
  * key at 45 degrees, a dimmer fill opposite it to open the shadows without
  * flattening the form, and a rim light behind to separate the cup from the
- * backdrop. The seamless white sweep behind removes the horizon line, which is
- * what makes a studio shot read as a studio shot.
+ * ground. With no backdrop mesh, that rim light is doing more work than it
+ * looks - it is the only thing giving the cup an edge against the gradient.
  */
-function StudioRig({ geom, sweep }: { geom: FrustumGeometry; sweep: THREE.Texture }) {
+function StudioRig({ geom }: { geom: FrustumGeometry }) {
   const h = geom.heightMm;
   return (
     <>
-      {/* Seamless sweep: floor curving up into the back wall, no horizon. */}
-      <Backdrop
-        floor={0.9}
-        segments={64}
-        scale={[h * 9, h * 5, h * 5]}
-        position={[0, -h / 2 - 0.5, -h * 1.6]}
-        receiveShadow
-      >
-        <meshStandardMaterial map={sweep} roughness={0.95} metalness={0} />
-      </Backdrop>
 
       <ambientLight intensity={0.55} />
       <hemisphereLight args={['#ffffff', '#c9d3e0', 0.55]} />
@@ -332,7 +313,7 @@ function StudioRig({ geom, sweep }: { geom: FrustumGeometry; sweep: THREE.Textur
       >
         <orthographicCamera attach="shadow-camera" args={[-h, h, h, -h, 0.5, h * 6]} />
       </directionalLight>
-      {/* Bounce from the sweep, so the underside is not dead grey. */}
+      {/* Bounce off the ground, so the underside is not dead grey. */}
       <directionalLight position={[0, -h * 1.6, h * 0.6]} intensity={0.35} />
     </>
   );
@@ -434,10 +415,10 @@ function RecordRig({
 
 export default function CupViewer(props: CupViewerProps) {
   const { geom } = props;
-  const studio = useStudioTextures();
+  const backdrop = useBackdropTexture();
   const groupRef = useRef<THREE.Group | null>(null);
-  // Pulled back further than a bare product view: a studio shot needs the
-  // sweep visible around the subject, not the subject filling the frame.
+  // Pulled back further than a bare product view: a studio shot needs space
+  // around the subject, not the subject filling the frame.
   const dist = geom.heightMm * 3.4;
   return (
     <Canvas
@@ -450,12 +431,12 @@ export default function CupViewer(props: CupViewerProps) {
           spreads with distance, as a real softbox behaves. */}
       <SoftShadows size={26} samples={12} focus={0.9} />
 
-      <SceneBackground texture={studio.background} />
+      <SceneBackground texture={backdrop} />
       {/* Fog matched to the gradient's deepest tone, so distance falls into the
           backdrop instead of standing off it. */}
       <fog attach="fog" args={[EDGE, geom.heightMm * 4, geom.heightMm * 12]} />
 
-      <StudioRig geom={geom} sweep={studio.sweep} />
+      <StudioRig geom={geom} />
       <CupMesh {...props} groupRef={groupRef} />
       <RecordRig groupRef={groupRef} recordRef={props.recordRef} />
 

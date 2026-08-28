@@ -359,10 +359,14 @@ pointed, pooling brightness behind the subject and letting the corners go down, 
 what separates a product from its ground without an outline. A single flat grey — which is what
 this was — reads as a render precisely because nothing falls off.
 
-Two gradients do different jobs: a screen-space one behind everything, anchored to the frame so
-the vignette stays put while the camera orbits, and one mapped onto the physical curved sweep, so
-the contact shadow falls across a graded surface rather than a uniform one. The warm centre against
-cool corners is deliberate — equal-temperature greys look flat however you ramp them.
+The gradient is screen-space, anchored to the frame so the vignette stays put while the camera
+orbits. The warm centre against cool corners is deliberate — equal-temperature greys look flat
+however you ramp them.
+
+There was a curved sweep too, a physical mesh the shadow fell across. It is gone: however seamless
+it is meant to look, the arc where it turned up into the back wall read as a line across the frame,
+and a line is worse than the flatness it was there to avoid. The cup is grounded by its contact
+shadow instead, which needs no geometry behind it.
 
 ### Turntable export
 
