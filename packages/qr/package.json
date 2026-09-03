@@ -1,7 +1,7 @@
 {
-  "name": "@cupco/vector",
+  "name": "@cupco/qr",
   "version": "0.1.0",
-  "description": "Vector artwork: SVG import, raster tracing, palette extraction and CMYK conversion",
+  "description": "Scannable QR codes as vector artwork, in six styles",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -13,10 +13,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cupco/geometry": "*",
-    "imagetracerjs": "^1.2.6"
+    "@cupco/vector": "*",
+    "qrcode-generator": "^2.0.4"
   },
   "devDependencies": {
+    "@zxing/library": "^0.23.0",
+    "jsqr": "^1.4.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

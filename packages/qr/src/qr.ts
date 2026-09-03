@@ -36,8 +36,11 @@
  */
 
 import qrcode from 'qrcode-generator';
-import type { PlacedArtwork } from './place';
-import type { RGB } from './color';
+// Type-only: the artwork format is defined by @cupco/vector, and importing it
+// rather than restating it is what stops the two drifting. Nothing from that
+// package survives compilation, so a build of this one pulls in
+// qrcode-generator and nothing else.
+import type { PlacedArtwork, RGB } from '@cupco/vector';
 
 /** How each data module is drawn. */
 export type QrModuleStyle = 'square' | 'dot' | 'rounded' | 'fluid';

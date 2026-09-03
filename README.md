@@ -8,13 +8,14 @@ engine**. There is no second, approximate mockup pipeline that could drift out o
 
 ## Status
 
-Roughly 17,600 lines of TypeScript across seven packages. **487 tests, all passing.**
+Roughly 17,600 lines of TypeScript across eight packages. **487 tests, all passing.**
 
 | Area | State | Tests |
 |---|---|---|
 | Geometry engine, 8oz profile, elevation, plates | ✅ | 140 |
 | Fan rasteriser | ✅ | 18 |
-| Vector: SVG import, tracing, QR styles, CMYK | ✅ | 110 |
+| Vector: SVG import, tracing, palettes, CMYK | ✅ | 48 |
+| QR codes: six styles, decoded by two decoders | ✅ | 62 |
 | Concept generation (10 layouts) | ✅ | 35 |
 | Persistence: assets, migration, GC, plates | ✅ | 55 |
 | Preflight: 12 production rules | ✅ | 48 |
@@ -69,6 +70,7 @@ because it changes what is on screen rather than what gets printed.
 packages/geometry/   ★ pure TS, zero deps — CupProfile, frustum maths, coordinate mappings, path warping
 packages/render/     rasteriser: design canvas -> production fan, shared browser + Node
 packages/vector/     SVG import, raster tracing, palette extraction, RGB->CMYK
+packages/qr/         scannable QR codes as vector artwork, in six styles
 packages/concepts/   rule-based layout strategies + contrast selection
 packages/persistence/ stored-document format, content-addressed assets, storage adapters
 packages/preflight/  production validation rules — what would go wrong if this were printed
@@ -197,6 +199,10 @@ there and not at the call sites.
 Six presets, picked by looking at swatches of **your own code** — a long address makes
 a denser code, and that changes how a style reads more than the choice of style does.
 
+This is its own package, [`@cupco/qr`](packages/qr/README.md). At runtime it needs
+`qrcode-generator` and nothing else — it borrows the artwork format from `@cupco/vector`
+as a type only, so it knows nothing about cups and lifts out cleanly.
+
 | | |
 |---|---|
 | **Classic** | Sharp squares. Most robust, smallest file. |
@@ -255,7 +261,7 @@ The suite includes a control — the plain square code, the shape that already s
 and a negative case, so a pass is never vacuous. *"It looks like a QR code"* is not
 evidence that it scans.
 
-To see them all: `npx tsx packages/vector/scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg`
+To see them all: `npx tsx packages/qr/scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg`
 
 ## Editing
 
@@ -556,9 +562,10 @@ npx vitest run --root packages/geometry     # 140 tests
 npx vitest run --root packages/render       # 18 tests
 npx vitest run --root packages/persistence  # 55 tests
 npx vitest run --root packages/preflight    # 48 tests
-npx vitest run --root packages/vector       # 110 tests, incl. QR decode
+npx vitest run --root packages/vector       # 48 tests
+npx vitest run --root packages/qr           # 62 tests, incl. real QR decoding
 npx vitest run --root apps/web              # 81 tests, incl. finding a cup in a plate
-npx tsx packages/vector/scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg
+npx tsx packages/qr/scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg
 npx tsx packages/geometry/scripts/report-profile.ts 8oz-single-wall
 npx tsx packages/geometry/scripts/emit-fan-svg.ts 8oz-single-wall out/8oz-fan.svg
 npx tsx packages/render/scripts/export-check.ts

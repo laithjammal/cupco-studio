@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { QR_STYLES, buildQrArtwork, getQrStyle, normaliseUrl } from '@cupco/vector';
+import { QR_STYLES, buildQrArtwork, getQrStyle, normaliseUrl } from '@cupco/qr';
 
 /**
  * Backing-store size for a swatch, in pixels.

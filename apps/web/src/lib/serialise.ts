@@ -16,7 +16,7 @@ import {
   quantiseArt, encodeJson, decodeJson, migrateDesign, SCHEMA_VERSION,
 } from '@cupco/persistence';
 import type { AssetStore, StoredArt, StoredDesign, StoredElement } from '@cupco/persistence';
-import { buildQrArtwork, getQrStyle, normaliseUrl } from '@cupco/vector';
+import { buildQrArtwork, getQrStyle, normaliseUrl } from '@cupco/qr';
 import type { PlacedArtwork } from '@cupco/vector';
 import type { Design, DesignElement } from './design';
 import { reserveIds } from './design';

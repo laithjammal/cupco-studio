@@ -10,9 +10,9 @@
 
 import type { PlacedArtwork } from '@cupco/vector';
 import {
-  rgbToCmyk, simulateCmykPrint, hexToRgb, rgbToHex, buildQrArtwork, normaliseUrl,
+  rgbToCmyk, simulateCmykPrint, hexToRgb, rgbToHex,
 } from '@cupco/vector';
-import { getQrStyle } from '@cupco/vector';
+import { buildQrArtwork, normaliseUrl, getQrStyle } from '@cupco/qr';
 import { cssFamily, getLoadedFont, layoutText, resolveWeight } from './fonts';
 
 export type ElementId = string;
