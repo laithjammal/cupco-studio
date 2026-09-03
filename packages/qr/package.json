@@ -10,16 +10,23 @@
   },
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --project tsconfig.build.json && node scripts/esm-extensions.mjs"
   },
   "dependencies": {
-    "@cupco/vector": "*",
     "qrcode-generator": "^2.0.4"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "@zxing/library": "^0.23.0",
     "jsqr": "^1.4.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
-  }
+  },
+  "files": [
+    "src",
+    "dist",
+    "scripts",
+    "README.md"
+  ]
 }

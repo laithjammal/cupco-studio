@@ -1,7 +1,7 @@
 /**
  * QR codes as vector artwork.
  *
- * Produced as PlacedArtwork so a QR travels the exact same path as an uploaded
+ * Produced as ordinary unit-box artwork, so a QR travels the same path as an uploaded
  * logo: it warps onto the fan, exports as vector CMYK, and prints as crisp
  * geometry at any size. Rasterising a QR would be the one thing guaranteed to
  * make it unscannable in print.
@@ -36,11 +36,7 @@
  */
 
 import qrcode from 'qrcode-generator';
-// Type-only: the artwork format is defined by @cupco/vector, and importing it
-// rather than restating it is what stops the two drifting. Nothing from that
-// package survives compilation, so a build of this one pulls in
-// qrcode-generator and nothing else.
-import type { PlacedArtwork, RGB } from '@cupco/vector';
+import type { Artwork, RGB } from './artwork';
 
 /** How each data module is drawn. */
 export type QrModuleStyle = 'square' | 'dot' | 'rounded' | 'fluid';
@@ -110,7 +106,7 @@ export interface QrOptions {
 }
 
 export interface QrResult {
-  art: PlacedArtwork;
+  art: Artwork;
   /** Modules per side, excluding the quiet zone. */
   moduleCount: number;
   /** Number of vector subpaths emitted. */

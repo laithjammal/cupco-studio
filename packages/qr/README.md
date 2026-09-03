@@ -2,10 +2,13 @@
 
 Scannable QR codes as **vector artwork**, in six styles.
 
-Output is `PlacedArtwork` — the same shape an imported SVG logo becomes — so a QR travels
-the identical path as any other artwork: it warps onto the production fan, exports as
-vector CMYK, and prints as crisp geometry at any size. Rasterising a QR is the one thing
-guaranteed to make it unscannable in print.
+Output is plain geometry in a unit box — the same shape an imported SVG logo becomes — so
+inside Cupco Studio a QR travels the identical path as any other artwork: it warps onto the
+production fan, exports as vector CMYK, and prints as crisp geometry at any size.
+Rasterising a QR is the one thing guaranteed to make it unscannable in print.
+
+**It stands on its own.** Copy the folder anywhere; at runtime it needs `qrcode-generator`
+and nothing else.
 
 ```ts
 import { buildQrArtwork, getQrStyle, normaliseUrl, QR_STYLES } from '@cupco/qr';
@@ -80,19 +83,49 @@ that it scans.
 independent of the code under test, so a shared bug cannot make both agree.
 
 ```bash
-npx vitest run --root packages/qr                                   # 62 tests
-npx tsx packages/qr/scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg
+npm test                                              # 62 tests
+npx tsx scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg
 ```
 
-## Dependencies
+`scripts/qr-styles-sheet.ts` renders all six styles to one SVG sheet from the real builder
+output — a visual check to sit alongside the decode tests.
 
-At runtime, **`qrcode-generator` and nothing else**. The encoder produces the module grid;
-everything in this package is about turning that grid into geometry that still scans.
+## Standalone
 
-`@cupco/vector` is imported **for types only** (`PlacedArtwork`, `RGB`) and is erased at
-compile time. Importing the artwork format rather than restating it is what stops the two
-drifting — a second copy of that shape would eventually disagree with the one the exporter
-reads.
+This package has no dependency on the rest of Cupco Studio. At runtime it needs
+**`qrcode-generator` and nothing else**; that encoder produces the module grid, and
+everything here is about turning that grid into geometry that still scans.
 
-To lift this package out of the monorepo, declare those two types locally; nothing else
-here knows about cups.
+```bash
+npm install          # qrcode-generator, plus two decoders for the tests
+npm test             # 62 tests
+npm run build        # dist/ — JavaScript plus .d.ts, for consumers who need it
+```
+
+It emits its own `Artwork` type (`src/artwork.ts`) rather than importing one, which is
+what lets the folder be copied out and used anywhere. Inside Cupco Studio that type is
+structurally identical to `PlacedArtwork` in `@cupco/vector`, so the two interoperate with
+no adapter — and `apps/web/test/qr-artwork-compat.test.ts` asserts them mutually
+assignable at compile time, so the copy cannot quietly drift from the original.
+
+Two conventions in the output matter, because getting either wrong misplaces the code:
+the box is the **unit square** (0..1 on both axes, quiet zone included), and **y points
+down**, the SVG convention.
+
+## Using it somewhere else
+
+```ts
+import { buildQrArtwork, getQrStyle, normaliseUrl, QR_STYLES } from '@cupco/qr';
+
+const url = normaliseUrl('cupco.com.au');
+if (!url) throw new Error('not a usable address');
+
+for (const preset of QR_STYLES) {
+  const { art, moduleCount } = buildQrArtwork(url, { style: getQrStyle(preset.id) });
+  // art.shapes[].subpaths[] are closed rings of {x, y} in 0..1, NONZERO winding.
+  // Fill them however you render — SVG path, canvas, PDF operator.
+}
+```
+
+The only hard requirements when you draw it: keep it **square**, keep the quiet zone,
+put it on a **light ground**, and keep the dark modules genuinely dark.

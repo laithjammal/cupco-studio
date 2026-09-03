@@ -8,7 +8,7 @@ engine**. There is no second, approximate mockup pipeline that could drift out o
 
 ## Status
 
-Roughly 17,600 lines of TypeScript across eight packages. **487 tests, all passing.**
+Roughly 17,600 lines of TypeScript across eight packages. **489 tests, all passing.**
 
 | Area | State | Tests |
 |---|---|---|
@@ -19,7 +19,7 @@ Roughly 17,600 lines of TypeScript across eight packages. **487 tests, all passi
 | Concept generation (10 layouts) | ✅ | 35 |
 | Persistence: assets, migration, GC, plates | ✅ | 55 |
 | Preflight: 12 production rules | ✅ | 48 |
-| App: serialisation, snapping, uploads, plate fitting | ✅ | 81 |
+| App: serialisation, snapping, uploads, plate fitting | ✅ | 83 |
 | 3D cup, graduated studio backdrop, turntable MP4 | ✅ | — |
 | Photo mockups: artwork composited onto real cups | ✅ | — |
 | Drawn mockups, five settings | ✅ | — |
@@ -199,9 +199,11 @@ there and not at the call sites.
 Six presets, picked by looking at swatches of **your own code** — a long address makes
 a denser code, and that changes how a style reads more than the choice of style does.
 
-This is its own package, [`@cupco/qr`](packages/qr/README.md). At runtime it needs
-`qrcode-generator` and nothing else — it borrows the artwork format from `@cupco/vector`
-as a type only, so it knows nothing about cups and lifts out cleanly.
+This is its own package, [`@cupco/qr`](packages/qr/README.md), and it **stands alone**:
+copy the folder anywhere and at runtime it needs `qrcode-generator` and nothing else. It
+declares the artwork shape it emits rather than importing one, so it knows nothing about
+cups — and `apps/web/test/qr-artwork-compat.test.ts` asserts that shape stays mutually
+assignable with `PlacedArtwork`, so the copy cannot drift from the one the exporter reads.
 
 | | |
 |---|---|
@@ -564,7 +566,7 @@ npx vitest run --root packages/persistence  # 55 tests
 npx vitest run --root packages/preflight    # 48 tests
 npx vitest run --root packages/vector       # 48 tests
 npx vitest run --root packages/qr           # 62 tests, incl. real QR decoding
-npx vitest run --root apps/web              # 81 tests, incl. finding a cup in a plate
+npx vitest run --root apps/web              # 83 tests, incl. finding a cup in a plate
 npx tsx packages/qr/scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg
 npx tsx packages/geometry/scripts/report-profile.ts 8oz-single-wall
 npx tsx packages/geometry/scripts/emit-fan-svg.ts 8oz-single-wall out/8oz-fan.svg
