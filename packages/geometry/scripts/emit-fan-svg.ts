@@ -52,7 +52,7 @@ const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W.toFixed(3)}mm" height="${H.toFixed(3)}mm"
      viewBox="0 0 ${W.toFixed(4)} ${H.toFixed(4)}">
   <g transform="translate(${tx.toFixed(4)} ${ty.toFixed(4)})">
-    <path d="${outlineToSvgPath(bleed)}" fill="none" stroke="#f472b6" stroke-width="0.25" stroke-dasharray="3 1.5"/>
+    <path d="${outlineToSvgPath(bleed)}" fill="none" stroke="#16a34a" stroke-width="0.25" stroke-dasharray="3 1.5"/>
     <path d="${outlineToSvgPath(cut)}"   fill="none" stroke="#db2777" stroke-width="0.4"/>
     <path d="${outlineToSvgPath(safe)}"  fill="none" stroke="#09c" stroke-width="0.25" stroke-dasharray="1 1"/>
   </g>

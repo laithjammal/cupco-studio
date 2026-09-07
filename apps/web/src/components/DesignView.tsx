@@ -116,7 +116,7 @@ export default function DesignView({
         {showGuides && (
           <>
             <span className="legend__item"><i style={{ background: '#0284c7' }} />Safe area</span>
-            <span className="legend__item"><i style={{ background: '#16a34a' }} />Seam overlap</span>
+            <span className="legend__item"><i style={{ background: '#7c3aed' }} />Seam overlap</span>
           </>
         )}
         <span className="legend__item" style={{ marginLeft: 'auto' }}>
@@ -151,7 +151,7 @@ function drawDesignGuides(
   ctx.fillStyle = 'rgba(22,163,74,0.18)';
   ctx.fillRect(0, 0, overlapFrac * w, h);
   ctx.fillRect(w - overlapFrac * w, 0, overlapFrac * w, h);
-  ctx.strokeStyle = '#16a34a';
+  ctx.strokeStyle = '#7c3aed';
   ctx.lineWidth = 1;
   ctx.setLineDash([]);
   ctx.strokeRect(0.5, 0.5, overlapFrac * w, h - 1);

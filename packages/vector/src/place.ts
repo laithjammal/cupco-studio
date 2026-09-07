@@ -67,6 +67,11 @@ export interface PlacementTransform {
   /** Design canvas dimensions, needed to keep the pixel aspect correct. */
   canvasW: number;
   canvasH: number;
+  /**
+   * Vertical stretch, as a multiple of the artwork's natural aspect.
+   * Omitted or 1 keeps the source's own proportions.
+   */
+  stretchV?: number;
 }
 
 /**
@@ -81,7 +86,7 @@ export function placeArtwork(
   t: PlacementTransform,
 ): DesignShape[] {
   const wPx = t.widthU * t.canvasW;
-  const hPx = wPx * art.aspect;
+  const hPx = wPx * art.aspect * (t.stretchV && t.stretchV > 0 ? t.stretchV : 1);
   const rad = (t.rotation * Math.PI) / 180;
   const cos = Math.cos(rad), sin = Math.sin(rad);
 

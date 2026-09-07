@@ -27,6 +27,17 @@ interface ElementBase {
   name: string;
   /** 0-1. Defaults to fully opaque when absent. */
   opacity?: number;
+  /**
+   * Vertical stretch, as a multiple of the artwork's natural aspect.
+   * Absent or 1 means untouched.
+   *
+   * Artwork is otherwise sized by `widthU` alone, with height following the
+   * source's own proportions - which is right for a logo, where distorting it
+   * is nearly always a mistake, and wrong for a shape, where an ellipse or a
+   * long rectangle is the point. This is what the EDGE handles drive; the
+   * corner handles still scale both axes together and leave it alone.
+   */
+  stretchV?: number;
 }
 
 export interface ImageElement extends ElementBase {
@@ -225,6 +236,12 @@ export function createImageElement(
   };
 }
 
+/** Vertical stretch multiplier, defaulting to 1 when never touched. */
+export function stretchOf(el: { stretchV?: number }): number {
+  const v = el.stretchV;
+  return v === undefined || !Number.isFinite(v) || v <= 0 ? 1 : v;
+}
+
 /** Half-extents of an element in design space (u,v), before rotation. */
 export interface HalfExtent { du: number; dv: number }
 
@@ -250,7 +267,7 @@ export function halfExtent(
     const aspect = el.type === 'image'
       ? el.image.naturalHeight / Math.max(1, el.image.naturalWidth)
       : el.art.aspect;
-    return { du: el.widthU / 2, dv: (wPx * aspect) / canvasH / 2 };
+    return { du: el.widthU / 2, dv: (wPx * aspect * stretchOf(el)) / canvasH / 2 };
   }
   const sizePx = el.sizeV * canvasH;
   const wPx = measure
@@ -484,11 +501,11 @@ export function renderDesign(
         ctx.fillRect(-width, -bh / 2, width * 3, bh);
       } else if (el.type === 'image') {
         const w = el.widthU * width;
-        const h = w * (el.image.naturalHeight / Math.max(1, el.image.naturalWidth));
+        const h = w * (el.image.naturalHeight / Math.max(1, el.image.naturalWidth)) * stretchOf(el);
         ctx.drawImage(el.image, -w / 2, -h / 2, w, h);
       } else if (el.type === 'qr') {
         const w = el.widthU * width;
-        const h = w * el.art.aspect;
+        const h = w * el.art.aspect * stretchOf(el);
         // The white ground is part of the code: scanners need the quiet zone
         // and the light modules to contrast, whatever colour the cup is.
         ctx.fillStyle = '#ffffff';
@@ -510,7 +527,7 @@ export function renderDesign(
         // Preview only. Export re-warps the SAME shapes as real paths, so what
         // is drawn here and what is printed come from one source.
         const w = el.widthU * width;
-        const h = w * el.art.aspect;
+        const h = w * el.art.aspect * stretchOf(el);
         for (const shape of el.art.shapes) {
           ctx.globalAlpha = (el.opacity ?? 1) * shape.opacity;
           const c = options.proofCmyk ? simulateCmykPrint(rgbToCmyk(shape.fill)) : shape.fill;

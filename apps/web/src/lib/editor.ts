@@ -27,7 +27,11 @@ export const ROTATE_OFFSET_PX = 26;
 export type DragMode =
   | { kind: 'move'; grabDu: number; grabDv: number }
   | { kind: 'resize'; corner: number }
+  | { kind: 'resize-edge'; edge: EdgeIndex }
   | { kind: 'rotate'; startAngle: number; startRotation: number };
+
+/** Edges, in the same order as the corners they sit between. */
+export type EdgeIndex = 0 | 1 | 2 | 3;   // top, right, bottom, left
 
 /** Cursor to show for a corner index, so the affordance reads correctly. */
 export function cornerCursor(i: number): string {
@@ -35,8 +39,15 @@ export function cornerCursor(i: number): string {
   return i === 0 || i === 2 ? 'nwse-resize' : 'nesw-resize';
 }
 
+/** Cursor for an edge handle. Top and bottom resize height, sides width. */
+export function edgeCursor(i: EdgeIndex): string {
+  return i === 0 || i === 2 ? 'ns-resize' : 'ew-resize';
+}
+
 export interface HandlePositions {
   corners: { x: number; y: number }[];
+  /** Midpoints of the four edges: top, right, bottom, left. */
+  edges: { x: number; y: number }[];
   rotate: { x: number; y: number } | null;
 }
 
@@ -57,8 +68,15 @@ export function handlePositions(
   const uv = elementCorners(el, cw, ch, measure);
   const corners = uv.map((c) => mapping.toCanvas(c));
 
+  // Edge midpoints, taken from the mapped corners so they sit on the drawn
+  // box even on the fan, where every edge is a curve.
+  const edges = corners.map((c, i) => {
+    const n = corners[(i + 1) % corners.length]!;
+    return { x: (c.x + n.x) / 2, y: (c.y + n.y) / 2 };
+  });
+
   const tl = corners[0], tr = corners[1], bl = corners[3];
-  if (!tl || !tr || !bl) return { corners, rotate: null };
+  if (!tl || !tr || !bl) return { corners, edges, rotate: null };
 
   const midTop = { x: (tl.x + tr.x) / 2, y: (tl.y + tr.y) / 2 };
   const midBottomish = { x: (bl.x + corners[2]!.x) / 2, y: (bl.y + corners[2]!.y) / 2 };
@@ -70,6 +88,7 @@ export function handlePositions(
 
   return {
     corners,
+    edges,
     rotate: { x: midTop.x + nx * ROTATE_OFFSET_PX, y: midTop.y + ny * ROTATE_OFFSET_PX },
   };
 }
@@ -83,14 +102,22 @@ export function hitHandle(
   cw: number,
   ch: number,
   measure?: CanvasRenderingContext2D,
-): { kind: 'corner'; index: number } | { kind: 'rotate' } | null {
+): { kind: 'corner'; index: number } | { kind: 'edge'; index: EdgeIndex } | { kind: 'rotate' } | null {
   const h = handlePositions(el, mapping, cw, ch, measure);
   if (h.rotate && Math.hypot(h.rotate.x - px, h.rotate.y - py) <= HANDLE_HIT_PX) {
     return { kind: 'rotate' };
   }
+  // Corners are tested FIRST. They overlap the edge handles on a small
+  // element, and a corner drag is the less surprising of the two to get.
   for (let i = 0; i < h.corners.length; i++) {
     const c = h.corners[i]!;
     if (Math.hypot(c.x - px, c.y - py) <= HANDLE_HIT_PX) return { kind: 'corner', index: i };
+  }
+  for (let i = 0; i < h.edges.length; i++) {
+    const e = h.edges[i]!;
+    if (Math.hypot(e.x - px, e.y - py) <= HANDLE_HIT_PX) {
+      return { kind: 'edge', index: i as EdgeIndex };
+    }
   }
   return null;
 }
@@ -135,10 +162,76 @@ export function resizePatch(el: DesignElement, ratio: number): Partial<DesignEle
   }
   if (el.type === 'band') {
     // A band always spans the circumference, so only its height is adjustable.
-    return { heightV: Math.max(0.01, Math.min(1, el.heightV * ratio)) } as Partial<DesignElement>;
+    // The ceiling is 3, not 1: the blank is taller than the cup, and a band
+    // asked to reach the bleed needs about 1.37.
+    return { heightV: Math.max(0.01, Math.min(3, el.heightV * ratio)) } as Partial<DesignElement>;
   }
   return { sizeV: Math.max(0.015, Math.min(1.2, el.sizeV * ratio)) } as Partial<DesignElement>;
 }
+
+/**
+ * Ratio for an EDGE drag: one axis only.
+ *
+ * Unlike a corner, an edge answers a single question - how wide, or how tall -
+ * so only the matching component of the pointer offset is used. Still anchored
+ * on the centre, for the same reason corners are: on the warped fan an
+ * opposite-edge anchor slides the element sideways as it grows.
+ */
+export function edgeResizeRatio(
+  el: DesignElement,
+  edge: EdgeIndex,
+  pointer: DesignUV,
+  cw: number,
+  ch: number,
+  measure?: CanvasRenderingContext2D,
+): number | null {
+  const cur = halfExtent(el, cw, ch, measure);
+  const horizontal = edge === 1 || edge === 3;
+  const d = horizontal ? Math.abs(pointer.u - el.u) : Math.abs(pointer.v - el.v);
+  const ref = horizontal ? cur.du : cur.dv;
+  const ratio = d / Math.max(ref, 1e-6);
+  return Number.isFinite(ratio) && ratio > 0 ? ratio : null;
+}
+
+/**
+ * Apply an edge drag.
+ *
+ * Sideways changes the width. Vertical changes `stretchV`, the multiplier on
+ * the artwork's natural aspect - which is the only way to make artwork taller
+ * without making it wider, since everything else is sized by width alone.
+ *
+ * Text and bands have a real height of their own and use it directly; a band
+ * ignores horizontal drags, because it always spans the circumference.
+ */
+export function edgeResizePatch(
+  el: DesignElement,
+  edge: EdgeIndex,
+  ratio: number,
+): Partial<DesignElement> {
+  const horizontal = edge === 1 || edge === 3;
+
+  if (el.type === 'image' || el.type === 'vector' || el.type === 'qr') {
+    if (horizontal) {
+      // Widening alone must not make it taller, so the stretch is corrected
+      // by the inverse: the drawn height is widthU * aspect * stretchV.
+      const widthU = Math.max(0.02, Math.min(3, el.widthU * ratio));
+      const applied = widthU / el.widthU;
+      const stretchV = clampStretch((el.stretchV ?? 1) / applied);
+      return { widthU, stretchV } as Partial<DesignElement>;
+    }
+    return { stretchV: clampStretch((el.stretchV ?? 1) * ratio) } as Partial<DesignElement>;
+  }
+
+  if (el.type === 'band') {
+    if (horizontal) return {};        // always full circumference
+    return { heightV: Math.max(0.01, Math.min(3, el.heightV * ratio)) } as Partial<DesignElement>;
+  }
+
+  // Text: only a single size, so an edge drag behaves like a corner drag.
+  return { sizeV: Math.max(0.015, Math.min(1.2, el.sizeV * ratio)) } as Partial<DesignElement>;
+}
+
+const clampStretch = (v: number) => Math.max(0.05, Math.min(20, v));
 
 /* -------------------------------------------------------------------------- */
 /* Drawing                                                                     */
@@ -201,6 +294,32 @@ export function drawSelection(
     ctx.lineWidth = 2;
     ctx.stroke();
   }
+
+  // Edge handles first, so a corner drawn over one reads as being on top -
+  // which matches the hit test, where corners win.
+  //
+  // Drawn as short bars lying along their edge rather than squares: it says
+  // which axis the handle moves, and stops them being mistaken for corners on
+  // a small element.
+  for (let i = 0; i < h.edges.length; i++) {
+    const e = h.edges[i]!;
+    const a = h.corners[i]!, b = h.corners[(i + 1) % h.corners.length]!;
+    let dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+    const half = HANDLE_PX * 0.75;
+    ctx.beginPath();
+    ctx.moveTo(e.x - dx * half, e.y - dy * half);
+    ctx.lineTo(e.x + dx * half, e.y + dy * half);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
 
   for (const c of h.corners) {
     ctx.beginPath();

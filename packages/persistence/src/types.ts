@@ -81,6 +81,13 @@ interface StoredBase {
   rotation: number;
   name: string;
   opacity?: number;
+  /**
+   * Vertical stretch, as a multiple of the artwork's natural aspect.
+   *
+   * Optional, and absent means 1 - so every design saved before edge handles
+   * existed loads back unchanged, with no migration.
+   */
+  stretchV?: number;
 }
 
 /**

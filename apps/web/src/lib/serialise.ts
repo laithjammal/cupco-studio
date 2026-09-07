@@ -86,6 +86,8 @@ export async function serialiseDesign(
     const base = {
       id: el.id, u: el.u, v: el.v, rotation: el.rotation, name: el.name,
       ...(el.opacity !== undefined ? { opacity: el.opacity } : {}),
+      // Omitted when untouched, so old documents round-trip byte-identical.
+      ...(el.stretchV !== undefined && el.stretchV !== 1 ? { stretchV: el.stretchV } : {}),
     };
 
     if (el.type === 'image') {
@@ -151,6 +153,8 @@ export async function deserialiseDesign(
     const base = {
       id: el.id, u: el.u, v: el.v, rotation: el.rotation, name: el.name,
       ...(el.opacity !== undefined ? { opacity: el.opacity } : {}),
+      // Omitted when untouched, so old documents round-trip byte-identical.
+      ...(el.stretchV !== undefined && el.stretchV !== 1 ? { stretchV: el.stretchV } : {}),
     };
 
     if (el.type === 'image') {

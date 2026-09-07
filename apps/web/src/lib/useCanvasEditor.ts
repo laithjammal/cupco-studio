@@ -21,6 +21,7 @@ import type { DesignElement, ElementId, Design } from './design';
 import { hitTest } from './design';
 import {
   hitHandle, angleToPointer, resizeRatio, resizePatch, cornerCursor, elementBounds,
+  edgeCursor, edgeResizeRatio, edgeResizePatch,
   type DragMode, type EditorMapping,
 } from './editor';
 import { halfExtent } from './design';
@@ -88,6 +89,13 @@ export function useCanvasEditor({
         e.currentTarget.setPointerCapture(e.pointerId);
         return;
       }
+      if (h?.kind === 'edge') {
+        onBeginEdit?.();
+        dragRef.current = { kind: 'resize-edge', edge: h.index };
+        setDragging(true);
+        e.currentTarget.setPointerCapture(e.pointerId);
+        return;
+      }
     }
 
     const uv = mapping.toDesign(p.px, p.py);
@@ -113,6 +121,7 @@ export function useCanvasEditor({
         const h = hitHandle(selected, mapping, p.px, p.py, canvasW, canvasH, measure);
         if (h?.kind === 'rotate') next = 'grab';
         else if (h?.kind === 'corner') next = cornerCursor(h.index);
+        else if (h?.kind === 'edge') next = edgeCursor(h.index);
         else next = hitTest(design, mapping.toDesign(p.px, p.py), canvasW, canvasH, measure) ? 'move' : 'default';
       } else if (hitTest(design, mapping.toDesign(p.px, p.py), canvasW, canvasH, measure)) {
         next = 'move';
@@ -162,6 +171,12 @@ export function useCanvasEditor({
       while (deg > 180) deg -= 360;
       while (deg < -180) deg += 360;
       onChange(selectedId, { rotation: deg });
+      return;
+    }
+
+    if (drag.kind === 'resize-edge') {
+      const r = edgeResizeRatio(selected, drag.edge, uv, canvasW, canvasH, measure);
+      if (r !== null) onChange(selectedId, edgeResizePatch(selected, drag.edge, r));
       return;
     }
 

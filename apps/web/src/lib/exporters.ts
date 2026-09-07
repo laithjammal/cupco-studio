@@ -206,7 +206,7 @@ export async function exportFanSvg(
            xlink:href="${r.dataUrl}" />
   </g>
   <g id="dieline" transform="translate(${tx.toFixed(4)} ${ty.toFixed(4)})" fill="none">
-    <path id="bleed" d="${path(buildFanOutline(profile, geom, 'bleed', 512).points)}" stroke="#f472b6" stroke-width="0.25" stroke-dasharray="2 1"/>
+    <path id="bleed" d="${path(buildFanOutline(profile, geom, 'bleed', 512).points)}" stroke="#16a34a" stroke-width="0.25" stroke-dasharray="2 1"/>
     <path id="cut" d="${path(buildFanOutline(profile, geom, 'cut', 512).points)}" stroke="#db2777" stroke-width="0.4"/>
     <path id="safe" d="${path(buildFanOutline(profile, geom, 'safe', 512).points)}" stroke="#0284c7" stroke-width="0.25" stroke-dasharray="1 1"/>
   </g>

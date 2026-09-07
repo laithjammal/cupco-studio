@@ -25,10 +25,12 @@
 import { PDFDocument, cmyk } from 'pdf-lib';
 import {
   buildFanOutline, fanBounds, warpShapeWrapped, warpShape, DEFAULT_FLATNESS_MM,
+  boundaryURange, boundaryVRange,
   type CupProfile, type FrustumGeometry, type DesignShape, type FanShape, type Point2,
 } from '@cupco/geometry';
 import { placeArtwork, matchPalette, rgbToCmyk, type PaletteEntry, type RGB } from '@cupco/vector';
 import { getLoadedFont, outlineText } from './fonts';
+import { stretchOf } from './design';
 import type { Design, DesignElement } from './design';
 
 const MM_PER_INCH = 25.4;
@@ -112,7 +114,8 @@ function buildFanShapes(
 
     if (el.type === 'vector') {
       placed = placeArtwork(el.art, {
-        u: el.u, v: el.v, widthU: el.widthU, rotation: el.rotation, canvasW: cw, canvasH: ch,
+        u: el.u, v: el.v, widthU: el.widthU, rotation: el.rotation,
+        canvasW: cw, canvasH: ch, stretchV: stretchOf(el),
       }).map((sh) => ({ ...sh, opacity: sh.opacity * (el.opacity ?? 1) }));
     } else if (el.type === 'text') {
       // Outlined from the same font file the preview rendered with, laid out
@@ -126,7 +129,7 @@ function buildFanShapes(
       });
     } else if (el.type === 'qr') {
       const half = el.widthU / 2;
-      const hV = (el.widthU * cw * el.art.aspect) / ch / 2;
+      const hV = (el.widthU * cw * el.art.aspect * stretchOf(el)) / ch / 2;
       // White plate first: the quiet zone and light modules must be white on
       // press, not "whatever colour the cup happens to be".
       placed = [{
@@ -145,19 +148,31 @@ function buildFanShapes(
           opacity: shape.opacity,
           subpaths: shape.subpaths.map((sp) => sp.map((pt) => ({
             u: el.u + (pt.x - 0.5) * el.widthU,
-            v: el.v - (pt.y - 0.5) * el.widthU * cw * el.art.aspect / ch,
+            v: el.v - (pt.y - 0.5) * el.widthU * cw * el.art.aspect * stretchOf(el) / ch,
           }))),
         });
       }
     } else if (el.type === 'band') {
-      // A full-circumference rectangle in design space. Emitted at exactly
-      // u 0..1 so the warp closes on itself with no seam artefact.
+      // A full-circumference rectangle, emitted out to the BLEED - not to
+      // u 0..1 and v 0..1.
+      //
+      // Clamping to the trim rectangle is what made a band stop short of the
+      // blank on every edge: its ends came out as straight vertical cuts
+      // inside the fan's slanted seam edges, with bare board beyond them, and
+      // it could not reach the rim or base either. Design space 0..1 is the
+      // cup wall; the blank is bigger than the cup on all four sides.
+      const bu = boundaryURange(profile, geom, 'bleed');
+      const bv = boundaryVRange(profile, geom, 'bleed');
+      const u0 = Math.min(bu.atTop.uLeft, bu.atBottom.uLeft);
+      const u1 = Math.max(bu.atTop.uRight, bu.atBottom.uRight);
       const half = el.heightV / 2;
-      const v0 = Math.max(0, el.v - half);
-      const v1 = Math.min(1, el.v + half);
+      // Still clamped, but to the bleed rather than the wall: a band has no
+      // business printing off the sheet.
+      const v0 = Math.max(bv.vBottom, el.v - half);
+      const v1 = Math.min(bv.vTop, el.v + half);
       placed = [{
         subpaths: [[
-          { u: 0, v: v0 }, { u: 1, v: v0 }, { u: 1, v: v1 }, { u: 0, v: v1 }, { u: 0, v: v0 },
+          { u: u0, v: v0 }, { u: u1, v: v0 }, { u: u1, v: v1 }, { u: u0, v: v1 }, { u: u0, v: v0 },
         ]],
         fill: hexToRgbLocal(el.color),
         opacity: el.opacity ?? 1,
@@ -340,7 +355,7 @@ export function exportFanSvgVector(
      viewBox="0 0 ${W.toFixed(4)} ${H.toFixed(4)}">
   <path id="background" d="${bg}" fill="${design.background}"/>
 ${body}
-  <path id="bleed" d="${bg}" fill="none" stroke="#f472b6" stroke-width="0.25" stroke-dasharray="2 1"/>
+  <path id="bleed" d="${bg}" fill="none" stroke="#16a34a" stroke-width="0.25" stroke-dasharray="2 1"/>
   <path id="cut" d="${toPathString([cut.points], minX, minY)}" fill="none" stroke="#db2777" stroke-width="0.4"/>
   <path id="safe" d="${path(buildFanOutline(profile, geom, 'safe', 1024).points)}" fill="none" stroke="#0284c7" stroke-width="0.25" stroke-dasharray="1 1"/>
 </svg>`;

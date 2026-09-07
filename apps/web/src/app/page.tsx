@@ -44,7 +44,13 @@ import {
   isSvgFile, isPdfFile, unsupportedReason,
   loadSvgAsset, loadRasterAsset, loadPdfAsset, traceRaster,
 } from '@/lib/upload';
-import { extractPalette, simulateCmykPrint, totalInkPct, printShift, hexToRgb, type PaletteEntry } from '@cupco/vector';
+import {
+  extractPalette, simulateCmykPrint, totalInkPct, printShift, hexToRgb,
+  SHAPES, buildShapeArtwork, rgbToHex, type PaletteEntry, type ShapeId,
+} from '@cupco/vector';
+
+/** Colour a new shape arrives in. Neutral, and clearly not final. */
+const SHAPE_DEFAULT_FILL = '#334155';
 import FanView from '@/components/FanView';
 import DesignView from '@/components/DesignView';
 import ConceptGallery from '@/components/ConceptGallery';
@@ -473,6 +479,23 @@ export default function Page() {
       : 'Fitted inside the safe area');
   }, [selectedId, selected, profile, geom, commitElement]);
 
+  /**
+   * Add a basic shape.
+   *
+   * Built as a VECTOR element, not a new element type: a rectangle is then
+   * the same kind of thing as an imported logo and needs no new case in the
+   * renderer, the fan warp, the exporter or the document schema.
+   */
+  const addShape = useCallback((id: ShapeId) => {
+    const el = createVectorElement(
+      buildShapeArtwork(id, hexToRgb(SHAPE_DEFAULT_FILL)),
+      SHAPES.find((s) => s.id === id)?.label ?? 'Shape',
+      false,
+    );
+    setDesign((d) => ({ ...d, elements: [...d.elements, el] }));
+    setSelectedId(el.id);
+  }, []);
+
   /** Record a 360 turntable as a video file. */
   const exportVideo = useCallback(async () => {
     const record = recordRef.current;
@@ -679,6 +702,18 @@ export default function Page() {
             }}>
               + Text
             </button>
+          </div>
+          <label className="txt__lbl" style={{ marginTop: 10 }}>Add a shape</label>
+          <div className="btnrow btnrow--wrap">
+            {SHAPES.map((sh) => (
+              <button key={sh.id} onClick={() => addShape(sh.id)}
+                title={`Add a ${sh.label.toLowerCase()} as editable vector artwork`}>
+                {sh.label}
+              </button>
+            ))}
+          </div>
+          <div className="hint" style={{ marginTop: 6 }}>
+            Shapes are real vector artwork — they export as CMYK paths, not pixels.
           </div>
         </div>
         <div className="field">
@@ -998,10 +1033,36 @@ function BlockControls({
       </div>
     );
   }
+  // Single-colour vector artwork can be recoloured. That is every basic
+  // shape, and also a one-colour logo, where it is genuinely useful. Artwork
+  // with more than one fill is left alone: flattening a multicolour mark to a
+  // single ink would be destructive and silent.
+  if (el.type === 'vector' && el.art.shapes.length === 1) {
+    const cur = rgbToHex(el.art.shapes[0]!.fill);
+    return (
+      <div className="txt">
+        <label className="txt__lbl">Fill colour</label>
+        <input type="color" value={cur}
+          onChange={(e) => onPatch({
+            art: {
+              ...el.art,
+              shapes: el.art.shapes.map((sh) => ({ ...sh, fill: hexToRgb(e.target.value) })),
+            },
+          } as Partial<DesignElement>)} />
+        <div className="hint">
+          {(el.widthU * 100).toFixed(0)}% of circumference · {el.rotation}° ·
+          exports as a vector path
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="hint">
       {el.type === 'vector' ? 'Vector artwork' : 'Bitmap artwork'} ·{' '}
       {(el.widthU * 100).toFixed(0)}% of circumference · {el.rotation}°
+      {el.type === 'vector' && el.art.shapes.length > 1
+        ? ` · ${el.art.shapes.length} colours, so not recolourable here`
+        : ''}
     </div>
   );
 }

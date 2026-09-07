@@ -41,7 +41,7 @@ export interface FanViewProps {
 }
 
 const GUIDE_STYLE: Record<FanBoundary, { stroke: string; dash: number[]; label: string }> = {
-  bleed: { stroke: '#f472b6', dash: [8, 5], label: 'Bleed' },
+  bleed: { stroke: '#16a34a', dash: [8, 5], label: 'Bleed' },
   cut:   { stroke: '#db2777', dash: [],     label: 'Cut' },
   trim:  { stroke: '#0f172a', dash: [],     label: 'Trim' },
   safe:  { stroke: '#0284c7', dash: [4, 4], label: 'Safe area' },

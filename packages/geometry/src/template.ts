@@ -83,7 +83,7 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
   ): string => {
     const rows: [string, string, string, string][] = [
       // swatch style, name, measurement, what it means
-      ['stroke="#f472b6" stroke-width="0.7" stroke-dasharray="2.2 1.2"',
+      ['stroke="#16a34a" stroke-width="0.7" stroke-dasharray="2.2 1.2"',
         'BLEED', `${bl}mm outside the cut`,
         'Artwork meant to reach an edge must run all the way out to here. Cutting is never exact; stopping at the cut line leaves a white sliver.'],
       ['stroke="#db2777" stroke-width="0.9"',
@@ -183,7 +183,7 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
   <g id="GUIDES" fill="none">
     <rect x="${(ox - cutL - bl).toFixed(3)}" y="${(oy - cutT - bl).toFixed(3)}"
           width="${bleedW.toFixed(3)}" height="${bleedH.toFixed(3)}"
-          stroke="#f472b6" stroke-width="0.3" stroke-dasharray="3 1.5"/>
+          stroke="#16a34a" stroke-width="0.3" stroke-dasharray="3 1.5"/>
     <rect x="${(ox - cutL).toFixed(3)}" y="${(oy - cutT).toFixed(3)}"
           width="${cutW.toFixed(3)}" height="${cutH.toFixed(3)}"
           stroke="#db2777" stroke-width="0.45"/>
@@ -202,8 +202,8 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
     ${label(ox, oy - cutT - bl - 4.5, `${profile.displayName}  -  artwork template  -  1:1 mm`, 'start', 4, '#0f172a')}
     ${label(ox, oy - cutT - bl - 1.2, `artwork ${W.toFixed(2)} x ${H.toFixed(2)}mm   |   blank ${cutW.toFixed(2)} x ${cutH.toFixed(2)}mm   |   with bleed ${bleedW.toFixed(2)} x ${bleedH.toFixed(2)}mm`)}
     ${label(ox + W / 2, oy + H + cutB + bl + 4.5, 'CENTRE  (faces the customer)', 'middle')}
-    ${label(ox + 1, oy + H + cutB + bl + 4.5, 'SEAM', 'start', 3, '#16a34a')}
-    ${label(ox + W - 1, oy + H + cutB + bl + 4.5, 'SEAM', 'end', 3, '#16a34a')}
+    ${label(ox + 1, oy + H + cutB + bl + 4.5, 'SEAM', 'start', 3, '#7c3aed')}
+    ${label(ox + W - 1, oy + H + cutB + bl + 4.5, 'SEAM', 'end', 3, '#7c3aed')}
   </g>
 
   <g id="LEGEND">
