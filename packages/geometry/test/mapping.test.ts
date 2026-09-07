@@ -124,8 +124,8 @@ describe('the two representations agree with each other', () => {
 
 describe('physical measurement helpers', () => {
   it('reports true circumference at the rims', () => {
-    expect(circumferenceAtV(0, g8)).toBeCloseTo(Math.PI * 55.0, 9);
-    expect(circumferenceAtV(1, g8)).toBeCloseTo(Math.PI * 73.62, 9);
+    expect(circumferenceAtV(0, g8)).toBeCloseTo(Math.PI * CUP_8OZ.dimensions.bottomDiameterMm, 9);
+    expect(circumferenceAtV(1, g8)).toBeCloseTo(Math.PI * CUP_8OZ.dimensions.topDiameterMm, 9);
   });
 
   it('the same design width is physically narrower lower down the cup', () => {
@@ -133,7 +133,8 @@ describe('physical measurement helpers', () => {
     const atBottom = designWidthToMm(0.2, 0, g8);
     const atTop = designWidthToMm(0.2, 1, g8);
     expect(atBottom).toBeLessThan(atTop);
-    expect(atTop / atBottom).toBeCloseTo(73.62 / 55.0, 9);
+    expect(atTop / atBottom).toBeCloseTo(
+      CUP_8OZ.dimensions.topDiameterMm / CUP_8OZ.dimensions.bottomDiameterMm, 9);
   });
 });
 

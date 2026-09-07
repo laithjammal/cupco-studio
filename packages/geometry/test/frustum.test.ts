@@ -39,44 +39,63 @@ describe('deriveFrustum — the arc-length identity', () => {
 describe('deriveFrustum — real 8oz values', () => {
   const g = deriveFrustum(CUP_8OZ.dimensions);
 
-  // Supplied by Cupco: top 73.62mm, bottom 55.00mm, height 90.00mm.
-  // These expectations are the numbers signed off in the architecture doc; if
-  // they ever change, the profile changed and that must be deliberate.
+  // Top 73.62mm, bottom 55.01mm, BODY height 85.76mm - the last of these
+  // solved from the manufacturer's fan drawing (B55H90), not the 90mm of the
+  // designation, which is the finished height. See profiles.ts.
+  //
+  // These are the numbers the drawing implies. If they change, the profile
+  // changed, and that must be deliberate.
   it('derives the documented slant height', () => {
-    expect(g.slantMm).toBeCloseTo(90.4803, 4);
+    expect(g.slantMm).toBeCloseTo(86.2633, 4);
   });
   it('derives the documented sector angle', () => {
-    expect(g.sectorAngleDeg).toBeCloseTo(37.0423, 4);
+    expect(g.sectorAngleDeg).toBeCloseTo(38.8323, 4);
   });
   it('derives the documented apex radii', () => {
-    expect(g.rBottomMm).toBeCloseTo(267.2618, 4);
-    expect(g.rTopMm).toBeCloseTo(357.7420, 4);
+    expect(g.rBottomMm).toBeCloseTo(254.9890, 4);
+    expect(g.rTopMm).toBeCloseTo(341.2523, 4);
   });
   it('derives the documented arc lengths', () => {
     expect(g.topArcMm).toBeCloseTo(231.28405, 4);
-    expect(g.bottomArcMm).toBeCloseTo(172.7876, 4);
+    expect(g.bottomArcMm).toBeCloseTo(172.81901, 4);
   });
   it('derives the documented taper', () => {
-    expect((g.taperHalfAngleRad * 180) / Math.PI).toBeCloseTo(5.9059, 4);
+    expect((g.taperHalfAngleRad * 180) / Math.PI).toBeCloseTo(6.1924, 4);
+  });
+
+  /**
+   * The check that ties all of the above to the physical die: the drawing's
+   * own top arc, less its own 9mm no-print band, is where the cup's rim sits.
+   */
+  it('puts the rim exactly where the manufacturer drawing puts it', () => {
+    expect(g.rTopMm + CUP_8OZ.margins.cut.topMm).toBeCloseTo(350.24, 1);
   });
 });
 
 describe('deriveFrustum — vertical vs slant height', () => {
-  // RESOLVED: Cupco confirmed 2026-08-26 that 90mm is the VERTICAL height.
-  // The slant reading is retained here to prove the engine handles both, and
-  // to document the 1.42mm that was at stake.
-  it('the 8oz profile is pinned to the confirmed VERTICAL reading', () => {
+  // RESOLVED: the profile's heightMm is the VERTICAL body height. The slant
+  // reading is retained here to prove the engine handles both.
+  //
+  // Note this is a different question from the one the drawing settled. That
+  // one was body vs FINISHED height (85.76 vs 90); this one is vertical vs
+  // slant for whichever number is held.
+  const H = CUP_8OZ.dimensions.heightMm;
+  const DR = (CUP_8OZ.dimensions.topDiameterMm - CUP_8OZ.dimensions.bottomDiameterMm) / 2;
+
+  it('the 8oz profile is pinned to the VERTICAL reading', () => {
     expect(CUP_8OZ.dimensions.heightIsSlant).toBe(false);
-    expect(deriveFrustum(CUP_8OZ.dimensions).sectorAngleDeg).toBeCloseTo(37.0423, 4);
+    expect(deriveFrustum(CUP_8OZ.dimensions).sectorAngleDeg).toBeCloseTo(38.8323, 4);
   });
 
-  it('interpreting 90mm as slant shifts R_bottom by ~1.42mm', () => {
+  it('interpreting the height as slant shifts R_bottom measurably', () => {
     const vertical = deriveFrustum(CUP_8OZ.dimensions);
     const slant = deriveFrustum({ ...CUP_8OZ.dimensions, heightIsSlant: true });
 
-    expect(slant.slantMm).toBeCloseTo(90.0, 10);
-    expect(slant.sectorAngleDeg).toBeCloseTo(37.24, 2);
-    expect(Math.abs(vertical.rBottomMm - slant.rBottomMm)).toBeCloseTo(1.42, 2);
+    expect(slant.slantMm).toBeCloseTo(H, 10);
+    // Reading the height as slant makes the cup shorter, so the apex radii
+    // shrink. The gap is what is at stake in getting the reading right.
+    expect(slant.rBottomMm).toBeLessThan(vertical.rBottomMm);
+    expect(Math.abs(vertical.rBottomMm - slant.rBottomMm)).toBeCloseTo(1.4878, 3);
   });
 
   it('the arc-length identity still holds under the slant reading', () => {
@@ -87,21 +106,33 @@ describe('deriveFrustum — vertical vs slant height', () => {
   it('recovers vertical height from slant consistently', () => {
     const g = deriveFrustum({ ...CUP_8OZ.dimensions, heightIsSlant: true });
     // h = sqrt(L^2 - dr^2)
-    expect(g.heightMm).toBeCloseTo(Math.sqrt(90 * 90 - 9.31 * 9.31), 8);
+    expect(g.heightMm).toBeCloseTo(Math.sqrt(H * H - DR * DR), 8);
   });
 });
 
 describe('deriveFrustum — no profile can be a scaled copy of another', () => {
-  it('sector angles differ materially across the three sizes', () => {
+  it('sector angles differ across the three sizes', () => {
     const a = deriveFrustum(CUP_8OZ.dimensions).sectorAngleDeg;
     const b = deriveFrustum(CUP_12OZ.dimensions).sectorAngleDeg;
     const c = deriveFrustum(CUP_16OZ.dimensions).sectorAngleDeg;
 
-    // If any pair matched, a single scaled fan could serve both — the exact
-    // failure mode this engine exists to prevent.
-    expect(Math.abs(a - b)).toBeGreaterThan(1);
-    expect(Math.abs(b - c)).toBeGreaterThan(1);
-    expect(Math.abs(a - c)).toBeGreaterThan(1);
+    // Scaling a fan preserves its sector angle. So ANY difference in angle is
+    // enough to prove no scale factor maps one onto another — the failure mode
+    // this engine exists to prevent. The threshold is deliberately "not equal"
+    // rather than a chosen number of degrees.
+    //
+    // Worth knowing how narrow this can get: with the 8oz corrected against
+    // its manufacturer drawing it sits 0.92 deg from the 16oz, where before it
+    // was 2.7 deg away. The two fans are still completely different shapes -
+    // their apex radii differ by ~65mm - but the angle alone no longer
+    // separates them by much, and the 12oz/16oz figures are placeholders.
+    expect(a).not.toBeCloseTo(b, 1);
+    expect(b).not.toBeCloseTo(c, 1);
+    expect(a).not.toBeCloseTo(c, 1);
+
+    // The apex radii are the other half of the shape, and are far apart.
+    const r = (d: typeof CUP_8OZ.dimensions) => deriveFrustum(d).rBottomMm;
+    expect(Math.abs(r(CUP_8OZ.dimensions) - r(CUP_16OZ.dimensions))).toBeGreaterThan(10);
   });
 
   it('12oz and 16oz share a top diameter yet differ in sector angle', () => {
@@ -189,18 +220,45 @@ describe('split provenance: dimensions vs margins', () => {
 
 describe('confirmed 8oz margin values', () => {
   it('matches what Cupco supplied 2026-08-26', () => {
-    expect(CUP_8OZ.margins.cut).toEqual({ topMm: 9.0, bottomMm: 7.0, leftMm: 9.0, rightMm: 3.0 });
+    // Cut: measured off the manufacturer's drawing 2026-09-07.
+    expect(CUP_8OZ.margins.cut).toEqual({
+      topMm: 8.988,
+      bottomMm: 12.749,
+      left: { atTopMm: 4.634, atBottomMm: 4.592 },
+      right: { atTopMm: 4.664, atBottomMm: 4.585 },
+    });
+    // Supplied by Cupco for this press.
     expect(CUP_8OZ.margins.bleedMm).toBe(5.0);
-    expect(CUP_8OZ.seam.overlapMm).toBe(6.0);
     expect(CUP_8OZ.margins.safeSeamMm).toBe(4.0);
-    expect(CUP_8OZ.rimBase.rimCurlAllowanceMm).toBe(7.0);
     expect(CUP_8OZ.margins.safeTopMm).toBe(3.0);
     expect(CUP_8OZ.margins.safeBottomMm).toBe(2.0);
+    // From the drawing: lap 7.5mm, "right edge on top".
+    expect(CUP_8OZ.seam.overlapMm).toBe(7.5);
+    // Rim and base allowances are the same physical facts as the cut line's
+    // top and bottom, and must not drift from them.
+    expect(CUP_8OZ.rimBase.rimCurlAllowanceMm).toBe(CUP_8OZ.margins.cut.topMm);
+    expect(CUP_8OZ.rimBase.baseAllowanceMm).toBe(CUP_8OZ.margins.cut.bottomMm);
+    expect(CUP_8OZ.rimBase.finishedRimOuterDiameterMm).toBe(79.69);
   });
 
   it('the printable band is the cup height less the two print limits', () => {
     const g = deriveFrustum(CUP_8OZ.dimensions);
     const printable = g.slantMm - CUP_8OZ.margins.safeTopMm - CUP_8OZ.margins.safeBottomMm;
-    expect(printable).toBeCloseTo(90.4803 - 5, 3);
+    expect(printable).toBeCloseTo(86.2633 - 5, 3);
+  });
+
+  /**
+   * The 90mm in B55H90 is the FINISHED height - body, rim curl and base. Read
+   * as the body height it contradicts the manufacturer's own blank. Pin the
+   * body height so it cannot quietly revert.
+   */
+  it('carries the body height, not the finished B55H90 height', () => {
+    expect(CUP_8OZ.dimensions.heightMm).toBe(85.76);
+    expect(CUP_8OZ.dimensions.heightMm).not.toBe(90);
+    expect(CUP_8OZ.dimensions.heightIsSlant).toBe(false);
+    const g = deriveFrustum(CUP_8OZ.dimensions);
+    // The drawing's own sector angle and top radius.
+    expect(g.sectorAngleRad * (180 / Math.PI)).toBeCloseTo(38.8323, 3);
+    expect(g.rTopMm).toBeCloseTo(341.2523, 3);
   });
 });

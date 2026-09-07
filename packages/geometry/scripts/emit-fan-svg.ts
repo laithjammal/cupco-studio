@@ -23,11 +23,12 @@ if (!profile) {
 }
 
 const g = deriveFrustum(profile.dimensions);
+const bleed = buildFanOutline(profile, g, 'bleed', 512);
 const cut = buildFanOutline(profile, g, 'cut', 512);
 const trim = buildFanOutline(profile, g, 'trim', 512);
 const safe = buildFanOutline(profile, g, 'safe', 512);
 
-const b = fanBounds(cut.points);
+const b = fanBounds(bleed.points);
 const pad = 10;
 const W = b.widthMm + pad * 2;
 const H = b.heightMm + pad * 2;
@@ -37,14 +38,14 @@ const ty = -b.minY + pad;
 const poly = (pts: { x: number; y: number }[]) =>
   pts.map((p) => `${p.x.toFixed(4)},${p.y.toFixed(4)}`).join(' ');
 
-const warn = profile.provenance === 'PLACEHOLDER'
+const warn = profile.dimensionsProvenance === 'PLACEHOLDER'
   ? `<text x="${pad}" y="${H - 3}" font-family="monospace" font-size="4" fill="#c00">` +
     `PLACEHOLDER DIMENSIONS - NOT FOR PRODUCTION</text>`
   : '';
 
 const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <!-- Cupco Studio derived production fan. 1:1 in millimetres.
-     Profile: ${profile.displayName} (${profile.provenance})
+     Profile: ${profile.displayName} (dimensions ${profile.dimensionsProvenance}, margins ${profile.marginsProvenance})
      Dt=${profile.dimensions.topDiameterMm}  Db=${profile.dimensions.bottomDiameterMm}  h=${profile.dimensions.heightMm}
      slant=${g.slantMm.toFixed(4)}  sector=${g.sectorAngleDeg.toFixed(4)}deg
      R_bot=${g.rBottomMm.toFixed(4)}  R_top=${g.rTopMm.toFixed(4)}
@@ -52,12 +53,16 @@ const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W.toFixed(3)}mm" height="${H.toFixed(3)}mm"
      viewBox="0 0 ${W.toFixed(4)} ${H.toFixed(4)}">
   <g transform="translate(${tx.toFixed(4)} ${ty.toFixed(4)})">
-    <path d="${outlineToSvgPath(cut)}" fill="none" stroke="#e08" stroke-width="0.25" stroke-dasharray="2 1"/>
+    <path d="${outlineToSvgPath(bleed)}" fill="none" stroke="#f472b6" stroke-width="0.25" stroke-dasharray="3 1.5"/>
+    <path d="${outlineToSvgPath(cut)}"   fill="none" stroke="#db2777" stroke-width="0.4"/>
     <path d="${outlineToSvgPath(trim)}"  fill="none" stroke="#000" stroke-width="0.4"/>
     <path d="${outlineToSvgPath(safe)}"  fill="none" stroke="#09c" stroke-width="0.25" stroke-dasharray="1 1"/>
   </g>
-  <text x="${pad}" y="${pad - 3}" font-family="monospace" font-size="3.5" fill="#333">
+  <text x="${pad}" y="${pad - 5.5}" font-family="monospace" font-size="3.5" fill="#333">
     ${profile.displayName} fan - sector ${g.sectorAngleDeg.toFixed(3)}deg, R_bot ${g.rBottomMm.toFixed(2)}mm, R_top ${g.rTopMm.toFixed(2)}mm - 1:1
+  </text>
+  <text x="${pad}" y="${pad - 1.5}" font-family="monospace" font-size="3" fill="#666">
+    cut R ${cut.rhoInnerMm.toFixed(2)}..${cut.rhoOuterMm.toFixed(2)}  |  bleed (pink dashed) outside it  |  trim black  |  safe blue
   </text>
   ${warn}
 </svg>
@@ -70,4 +75,7 @@ console.log(`  R_bottom    ${g.rBottomMm.toFixed(4)} mm`);
 console.log(`  R_top       ${g.rTopMm.toFixed(4)} mm`);
 console.log(`  top arc     ${g.topArcMm.toFixed(4)} mm  (pi*Dt = ${(Math.PI * profile.dimensions.topDiameterMm).toFixed(4)})`);
 console.log(`  bottom arc  ${g.bottomArcMm.toFixed(4)} mm  (pi*Db = ${(Math.PI * profile.dimensions.bottomDiameterMm).toFixed(4)})`);
-console.log(`  blank bbox  ${b.widthMm.toFixed(2)} x ${b.heightMm.toFixed(2)} mm (to the cut line)`);
+console.log(`  cut arcs    R ${cut.rhoInnerMm.toFixed(4)} .. ${cut.rhoOuterMm.toFixed(4)} mm  (span ${(cut.rhoOuterMm - cut.rhoInnerMm).toFixed(4)})`);
+console.log(`  cut widths  ${(cut.corners.outerRight.x - cut.corners.outerLeft.x).toFixed(3)} at the top arc, ${(cut.corners.innerRight.x - cut.corners.innerLeft.x).toFixed(3)} at the bottom`);
+console.log(`  blank bbox  ${fanBounds(cut.points).widthMm.toFixed(2)} x ${fanBounds(cut.points).heightMm.toFixed(2)} mm (to the cut line)`);
+console.log(`  sheet bbox  ${b.widthMm.toFixed(2)} x ${b.heightMm.toFixed(2)} mm (to the bleed)`);

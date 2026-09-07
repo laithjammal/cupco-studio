@@ -55,7 +55,7 @@ console.log(`  top arc      : ${g.topArcMm.toFixed(4)} mm  (pi x ${CUP_8OZ.dimen
 console.log(`  bottom arc   : ${g.bottomArcMm.toFixed(4)} mm  (pi x ${CUP_8OZ.dimensions.bottomDiameterMm} = ${(Math.PI * CUP_8OZ.dimensions.bottomDiameterMm).toFixed(4)})`);
 console.log(`  slant        : ${g.slantMm.toFixed(4)} mm`);
 const c = CUP_8OZ.margins.cut;
-console.log(`  cut: ${c.topMm}mm top, ${c.bottomMm}mm base, ${c.leftMm}mm left, ${c.rightMm}mm right`);
+console.log(`  cut: ${c.topMm}mm top, ${c.bottomMm}mm base, left seam ${c.left.atTopMm}/${c.left.atBottomMm}mm, right seam ${c.right.atTopMm}/${c.right.atBottomMm}mm`);
 
 console.log(`\n${pdfOk && rasterOk ? 'ALL DIMENSIONS CORRECT' : 'DIMENSION MISMATCH FOUND'}`);
 process.exit(pdfOk && rasterOk ? 0 : 1);

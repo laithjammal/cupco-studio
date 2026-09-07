@@ -19,30 +19,65 @@ const DEFAULT_CANVAS = { widthPx: 2732, heightPx: 1069, dpi: 300 } as const;
 /**
  * 8oz single wall.
  *
- * Dimensions supplied by Cupco from the manufacturer's fan blank drawing
- * ("Final 8 Oz dimensions Lynn .pdf", title block ref B55H90 = bottom 55mm,
- * height 90mm).
+ * Authored from the manufacturer's fan blank drawing "Final 8 Oz dimensions
+ * Lynn .pdf" (title block B55H90, in Drawings/), read by parsing the PDF's
+ * vector content stream rather than by eye. The blank's two arcs are concentric about a fitted
+ * apex to 0.012mm RMS, so the drawing is a true annular sector and these are
+ * measurements, not readings off a picture.
  *
- * Independently corroborated: parsing that drawing's vector content stream
- * yields dimension lines of 208.56pt (73.57mm) and 156.0pt (55.03mm), matching
- * the supplied 73.62mm / 55.00mm to within 0.05mm, and confirming the drawing
- * is 1:1 in millimetres.
+ * WHAT THE DRAWING STATES, AND WHAT WAS MEASURED FROM ITS GEOMETRY
  *
- * Derived fan geometry (verified to machine precision in the test suite):
- *   slant L    =  90.4803 mm
- *   sector     =  37.0423 deg
- *   R_bottom   = 267.2618 mm
- *   R_top      = 357.7420 mm
- *   top arc    = 231.2840 mm  (= pi * 73.62)
- *   bottom arc = 172.7876 mm  (= pi * 55.00)
+ *   labelled      measured    what it is
+ *   R350.24       350.207     outer (top) arc of the blank - the die
+ *   R242.24       242.220     inner (bottom) arc of the blank - the die
+ *   108.01        107.988     radial extent of the blank
+ *   38.88 deg     38.896      included angle of the two straight seam edges
+ *   241.59        241.606     blank width across the seam edges at the top arc
+ *   169.7         169.680     the same at the bottom arc
+ *   9             9.007       no-print band inside the top arc
+ *   7             6.980       no-print band inside the bottom arc
  *
- * HEIGHT INTERPRETATION: CONFIRMED VERTICAL by Cupco 2026-08-26. The slant
- * reading (which would give sector 37.2400 deg and shift R_bottom by 1.42mm)
- * is therefore ruled out. `heightIsSlant: false` is deliberate, not a default.
+ * Six independent figures agree to better than 0.03mm. The 9 and 7 are the
+ * dashed arcs the drawing hatches, over the note "the hatched part is left
+ * blank for printing".
+ *
+ * HEIGHT: 85.76mm, and this is a CORRECTION.
+ *
+ * The profile previously carried 90mm, taken from the B55H90 designation. That
+ * is the FINISHED cup height - body plus rim curl plus base - not the body the
+ * fan develops from. Read as the body height it is not consistent with the
+ * manufacturer's own blank: it puts R_top at 357.74mm, which is 7.5mm OUTSIDE
+ * the die's top arc, so the cup would not fit the blank it is cut from.
+ *
+ * Read as the finished height, and the body solved from the drawing instead,
+ * everything closes:
+ *
+ *   body height  85.76mm  ->  sector 38.8323 deg   (drawing labels 38.88)
+ *                            R_top  341.2523mm    (drawing: 350.24 - 9 = 341.24)
+ *
+ * R_top lands 0.012mm from the drawing's own figure, and the sector angle
+ * within 0.05 deg. No other reading of the three numbers comes close.
+ *
+ * REBUILT AGAINST THE DIE: driving buildFanOutline from the values below and
+ * comparing the result to the drawn blank puts all four corners within
+ * 0.0005mm, and both seam edges within 0.0005mm over their full 108mm length.
+ *
+ * KNOWN GAPS - corner features the die has and this model does not:
+ *   - bottom-right notch, 5.5 x 5.5mm
+ *   - top-left chamfer, 2 x 8mm
+ *   - bottom-left corner radius R2
+ * All three fall inside the no-print bands, so they do not affect where
+ * artwork lands; they would matter to a die maker reading our dieline.
+ *
+ * ONE FIGURE STILL DISAGREES: the drawing's own cross-section gives the base
+ * as diameter 55.01, but its fan develops to about 52.6 at the base. The
+ * drawing is internally inconsistent by ~2.4mm there. The fan is what the die
+ * cuts, so the fan is what the cut line follows; the cross-section's 55.01 is
+ * kept as the bottom diameter because it is also what Cupco quote. Worth
+ * settling with the manufacturer.
  *
  * CAVEAT FROM SOURCE: the drawing states "this drawing for reference, final
- * drawing after mold finished and tested". Re-confirm with the manufacturer
- * before a production run.
+ * drawing after mold finished and tested". Re-confirm before a production run.
  */
 export const CUP_8OZ: CupProfile = {
   id: '8oz-single-wall',
@@ -50,52 +85,56 @@ export const CUP_8OZ: CupProfile = {
   sizeOz: 8,
   wall: 'single',
   dimensionsProvenance: 'MEASURED',
-  // Every value that AFFECTS OUTPUT is now confirmed: bleed, seam overlap,
-  // seam clearance, and the top and bottom print limits. baseAllowanceMm is
-  // still an estimate but drives nothing (see rimBase below), so it does not
-  // hold this at PLACEHOLDER.
+  // Every margin that affects output is now either measured off the
+  // manufacturer's drawing (the whole cut line, the rim and base allowances)
+  // or supplied by Cupco for this press (bleed, safe area, seam).
   marginsProvenance: 'MEASURED',
   provenanceNote:
-    'DIMENSIONS: supplied by Cupco 2026-08-25 from manufacturer drawing B55H90; corroborated ' +
-    'against the drawing vector geometry to within 0.05mm. Height confirmed VERTICAL by Cupco ' +
-    '2026-08-26. Source drawing marked "for reference, final drawing after mold finished and ' +
-    'tested" - re-confirm before a production run. ' +
-    'MARGINS: seam overlap 6mm, seam clearance 4mm, rim curl 7mm, top print limit 3mm and ' +
-    'bottom print limit 2mm all supplied by Cupco 2026-08-26. CUT LINE measured off a real ' +
-    'fan blank 2026-09-07 and it is not a uniform outset: top 9, bottom 7, left 9, right 3mm. ' +
-    'The 5mm uniform "bleed" Cupco quoted verbally drew a fan of the wrong shape. The 7mm at ' +
-    'the bottom supersedes the previous baseAllowanceMm estimate of 5mm.',
+    'DIMENSIONS: top diameter 73.62 and bottom 55.01 from the manufacturer drawing B55H90 ' +
+    '(also what Cupco quote). BODY height 85.76 solved from that drawing 2026-09-07 - the ' +
+    '90mm previously held is the FINISHED height, and read as the body it put the cup 7.5mm ' +
+    'outside the blank it is cut from. ' +
+    'CUT LINE: read off the drawing vector geometry 2026-09-07; rebuilds to within 0.0005mm ' +
+    'of the drawn blank at all four corners and along both seam edges. Supersedes the 9/7/9/3 ' +
+    'figures inferred from written feedback, and the 5mm uniform bleed before that. ' +
+    'SAFE AREA: seam clearance 4mm, top print limit 3mm, bottom 2mm supplied by Cupco ' +
+    '2026-08-26. The drawing hatches its own no-print bands - 9 top, 7 bottom, 4.5 left, ' +
+    '6.5 right, all measured from the CUT - which are close to but not the same as Cupco\'s; ' +
+    'Cupco\'s are kept because they were given for this press. ' +
+    'BLEED: 5mm quoted verbally by Cupco, now measured outward from the cut. ' +
+    'Source drawing marked "for reference, final drawing after mold finished and tested".',
   dimensions: {
+    // Body height, not the finished 90mm of the B55H90 designation. See above.
     topDiameterMm: 73.62,
-    bottomDiameterMm: 55.0,
-    heightMm: 90.0,
+    bottomDiameterMm: 55.01,
+    heightMm: 85.76,
     heightIsSlant: false,
   },
-  // Both figures here are PHYSICAL FACTS about how the cup is formed, not
-  // print limits. Safe insets are absolute (see fan.ts offsetsFor), so neither
-  // drives the safe area. The base allowance now has a second life as the
-  // distance the blank runs past the cup's base - see margins.cut.bottomMm,
-  // which carries the same number.
   rimBase: {
-    // ~7mm rolls into the rim curl. Print deliberately runs 4mm into this
-    // zone - the printable limit is margins.safeTopMm.
-    rimCurlAllowanceMm: 7.0,
-    // Measured off a real fan blank 2026-09-07: the blank runs 7mm past the
-    // cup's base, which is the material the base seam consumes. This is the
-    // same distance as margins.cut.bottomMm, and now it does drive output.
-    baseAllowanceMm: 7.0,
+    // The material above the cup's top rim, which rolls into the curl. Same
+    // physical fact as margins.cut.topMm, and the drawing's 9mm hatched band.
+    rimCurlAllowanceMm: 8.988,
+    // The material below the cup's base, consumed forming the base seam. Same
+    // physical fact as margins.cut.bottomMm.
+    baseAllowanceMm: 12.749,
+    // Over the curled rim, from the drawing. Reference only - nothing derives
+    // from it; the wall's 73.62 is what wraps.
+    finishedRimOuterDiameterMm: 79.69,
   },
   margins: {
-    // Measured off a real fan blank 2026-09-07, against what the app drew.
-    // Not a uniform outset, and not the 5mm "bleed" Cupco quoted verbally.
+    // Read off the manufacturer's drawing 2026-09-07. Not a uniform outset,
+    // and the two seam edges each need TWO numbers because the die cuts a
+    // straight line, not a curve at constant distance from a radial one.
     cut: {
-      topMm: 9.0,     // was 5, out a further 4
-      bottomMm: 7.0,  // the blank is 7mm longer than the finished cup
-      leftMm: 9.0,    // was 5, out a further 4
-      rightMm: 3.0,   // was 5, IN by 2 - this edge laps under the other
+      topMm: 8.988,     // outer arc R350.24, trim R_top 341.2523
+      bottomMm: 12.749, // inner arc R242.24, trim R_bot 254.9890
+      left: { atTopMm: 4.634, atBottomMm: 4.592 },
+      right: { atTopMm: 4.664, atBottomMm: 4.585 },
     },
-    // Cupco: "bleed of 5mm is good". Now measured from the CUT line rather
-    // than from trim, so ink runs 5mm past the real edge of the blank.
+    // Cupco: "bleed of 5mm is good". Measured OUTWARD FROM THE CUT, so ink
+    // runs 5mm past the real edge of the blank. Worth re-confirming: it was
+    // quoted when bleed was being measured from trim, and 3mm is the more
+    // usual allowance beyond a die line.
     bleedMm: 5.0,
     safeTopMm: 3.0,    // Cupco: "print up to 3mm of the top edge".
     safeBottomMm: 2.0, // Cupco: "can print to 2mm from the bottom".
@@ -103,8 +142,10 @@ export const CUP_8OZ: CupProfile = {
   },
   seam: {
     positionRad: Math.PI,
-    overlapMm: 6.0,            // Cupco: "seam overlap is 6mm".
-    visibleStartOffsetMm: 6.0, // Hidden strip equals the overlap width.
+    // The drawing marks the lap 7.5mm, "right edge on top". Cupco said 6mm.
+    // The drawing is the manufacturing document, so it wins.
+    overlapMm: 7.5,
+    visibleStartOffsetMm: 7.5, // Hidden strip equals the overlap width.
   },
   designSpaceMode: 'angular',
   designCanvas: DEFAULT_CANVAS,
@@ -128,7 +169,11 @@ export const CUP_12OZ: CupProfile = {
   dimensions: { topDiameterMm: 90.0, bottomDiameterMm: 60.0, heightMm: 110.0 },
   rimBase: { rimCurlAllowanceMm: 6.0, baseAllowanceMm: 5.0 },
   margins: {
-    cut: { topMm: 3.0, bottomMm: 3.0, leftMm: 3.0, rightMm: 3.0 },
+    cut: {
+      topMm: 3.0, bottomMm: 3.0,
+      left: { atTopMm: 3.0, atBottomMm: 3.0 },
+      right: { atTopMm: 3.0, atBottomMm: 3.0 },
+    },
     bleedMm: 3.0,
     safeTopMm: 6.0, safeBottomMm: 6.0, safeSeamMm: 5.0,
   },
@@ -155,7 +200,11 @@ export const CUP_16OZ: CupProfile = {
   dimensions: { topDiameterMm: 90.0, bottomDiameterMm: 60.0, heightMm: 135.0 },
   rimBase: { rimCurlAllowanceMm: 6.0, baseAllowanceMm: 5.0 },
   margins: {
-    cut: { topMm: 3.0, bottomMm: 3.0, leftMm: 3.0, rightMm: 3.0 },
+    cut: {
+      topMm: 3.0, bottomMm: 3.0,
+      left: { atTopMm: 3.0, atBottomMm: 3.0 },
+      right: { atTopMm: 3.0, atBottomMm: 3.0 },
+    },
     bleedMm: 3.0,
     safeTopMm: 6.0, safeBottomMm: 6.0, safeSeamMm: 5.0,
   },

@@ -87,15 +87,35 @@ export interface RimAndBase {
  *
  * `left` and `right` are the fan as it is DRAWN: left is design u=0, right is
  * u=1. They are not left and right on the finished cup, which has no such
- * thing.
+ * thing. Each carries its own offset at the top and bottom arcs - see SeamCut.
  *
  * A negative value is legal and means the cut falls inside the trim line.
  */
 export interface CutMargins {
   topMm: number;
   bottomMm: number;
-  leftMm: number;
-  rightMm: number;
+  left: SeamCut;
+  right: SeamCut;
+}
+
+/**
+ * One seam edge of the blank, as distances OUTSIDE the trim line, mm.
+ *
+ * TWO numbers, not one, because a die cuts a STRAIGHT edge, and a straight
+ * line is not a constant distance from a radial one. Holding the offset
+ * constant and letting the angle follow (which is what a single number does)
+ * bows the edge: fitted at the top arc it missed the real blank's bottom
+ * corner by 1.8mm, and fitted at the bottom it missed the top by the same.
+ *
+ * Given both, `buildFanOutline` places the two corners and the straight
+ * segment between them falls where the die actually cuts - to within 0.0005mm
+ * of the drawn blank, over its full 108mm length.
+ */
+export interface SeamCut {
+  /** Distance outside trim, measured at the TOP (outer) arc. */
+  atTopMm: number;
+  /** Distance outside trim, measured at the BOTTOM (inner) arc. */
+  atBottomMm: number;
 }
 
 export interface PrintMargins {

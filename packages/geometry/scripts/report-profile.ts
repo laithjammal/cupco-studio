@@ -13,7 +13,8 @@ console.log(`  dimensions  ${p.dimensionsProvenance}   margins  ${p.marginsProve
 console.log(`  production ready: ${isProductionReady(p) ? 'YES' : 'NO (export blocked)'}`);
 console.log(`\n  Dt ${p.dimensions.topDiameterMm}  Db ${p.dimensions.bottomDiameterMm}  h ${p.dimensions.heightMm} (${p.dimensions.heightIsSlant ? 'slant' : 'vertical'})`);
 console.log(`  sector ${g.sectorAngleDeg.toFixed(4)}deg   R_bot ${g.rBottomMm.toFixed(4)}   R_top ${g.rTopMm.toFixed(4)}`);
-console.log(`\n  cut: top ${p.margins.cut.topMm}  bottom ${p.margins.cut.bottomMm}  left ${p.margins.cut.leftMm}  right ${p.margins.cut.rightMm}`);
+console.log(`\n  cut: top ${p.margins.cut.topMm}  bottom ${p.margins.cut.bottomMm}`);
+console.log(`       left seam ${p.margins.cut.left.atTopMm}/${p.margins.cut.left.atBottomMm}  right seam ${p.margins.cut.right.atTopMm}/${p.margins.cut.right.atBottomMm}  (at top arc / bottom arc)`);
 console.log(`  safe: top ${p.margins.safeTopMm}  bottom ${p.margins.safeBottomMm}  seam ${p.margins.safeSeamMm}`);
 console.log(`  seam overlap ${p.seam.overlapMm}   rim curl ${p.rimBase.rimCurlAllowanceMm}   base allowance ${p.rimBase.baseAllowanceMm}`);
 console.log(`  print extends ${(p.rimBase.rimCurlAllowanceMm - p.margins.safeTopMm).toFixed(1)}mm into the curl zone`);

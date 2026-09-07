@@ -15,7 +15,9 @@
  * Offsets are applied in the natural directions of the sector:
  *   - radially at the top and bottom arcs (rho +/- offset)
  *   - angularly at the seam edges, converted from a LINEAR mm offset at each
- *     radius, because a constant linear inset subtends a varying angle.
+ *     radius, because a constant linear inset subtends a varying angle. Each
+ *     seam edge carries its own offset at the top and bottom arcs, so the
+ *     straight segment between the two corners lands where the die cuts.
  *
  * Every offset is PER EDGE. A fan blank is not a uniform outset of the cup:
  * the bottom runs past the base by the material the base seam consumes, and
@@ -32,6 +34,19 @@ export interface FanOutline {
   boundary: FanBoundary;
   /** Closed polygon in fan space (apex at origin), mm. */
   points: Point2[];
+  /**
+   * The four corners, and the two arc radii.
+   *
+   * Published so that anything needing to TEST the sector - the rasteriser's
+   * inside/outside clip - can work from the same corners the polygon is drawn
+   * from, rather than re-deriving the seam edges and drifting from them.
+   */
+  rhoInnerMm: number;
+  rhoOuterMm: number;
+  corners: {
+    innerLeft: Point2; innerRight: Point2;
+    outerLeft: Point2; outerRight: Point2;
+  };
 }
 
 /** Bounding box in fan space, mm. */
@@ -47,11 +62,15 @@ export interface FanBounds {
 function offsetsFor(boundary: FanBoundary, profile: CupProfile) {
   switch (boundary) {
     case 'trim':
-      return { top: 0, bottom: 0, left: 0, right: 0 };
+      return { top: 0, bottom: 0, leftTop: 0, leftBottom: 0, rightTop: 0, rightBottom: 0 };
     case 'cut': {
-      // Asymmetric on purpose. See CutMargins.
+      // Per edge AND per arc, on purpose. See CutMargins and SeamCut.
       const c = profile.margins.cut;
-      return { top: c.topMm, bottom: c.bottomMm, left: c.leftMm, right: c.rightMm };
+      return {
+        top: c.topMm, bottom: c.bottomMm,
+        leftTop: c.left.atTopMm, leftBottom: c.left.atBottomMm,
+        rightTop: c.right.atTopMm, rightBottom: c.right.atBottomMm,
+      };
     }
     case 'bleed': {
       // OUTSIDE the cut, not outside trim: the blank is cut at the cut line,
@@ -60,15 +79,17 @@ function offsetsFor(boundary: FanBoundary, profile: CupProfile) {
       const b = profile.margins.bleedMm;
       return {
         top: c.topMm + b, bottom: c.bottomMm + b,
-        left: c.leftMm + b, right: c.rightMm + b,
+        leftTop: c.left.atTopMm + b, leftBottom: c.left.atBottomMm + b,
+        rightTop: c.right.atTopMm + b, rightBottom: c.right.atBottomMm + b,
       };
     }
     case 'safe':
       // Safe insets are ABSOLUTE distances from the trim edge, NOT additive
       // with the rim curl or base allowance.
       //
-      // Cupco 2026-08-26: rim curl is ~7mm but printing runs "up to 3mm of the
-      // top edge" - i.e. print deliberately extends ~4mm INTO the curl zone,
+      // Cupco 2026-08-26: printing runs "up to 3mm of the top edge", while
+      // the curl takes ~9mm (measured off the manufacturer drawing) - i.e.
+      // print deliberately extends ~6mm INTO the curl zone,
       // because the curl rolls outward and its outer face stays visible on the
       // finished cup. Adding the two would wrongly pull the safe line down to
       // 10mm and crop artwork the customer expects to see.
@@ -78,8 +99,10 @@ function offsetsFor(boundary: FanBoundary, profile: CupProfile) {
       return {
         top: -profile.margins.safeTopMm,
         bottom: -profile.margins.safeBottomMm,
-        left: -profile.margins.safeSeamMm,
-        right: -profile.margins.safeSeamMm,
+        leftTop: -profile.margins.safeSeamMm,
+        leftBottom: -profile.margins.safeSeamMm,
+        rightTop: -profile.margins.safeSeamMm,
+        rightBottom: -profile.margins.safeSeamMm,
       };
   }
 }
@@ -106,10 +129,10 @@ export function buildFanOutline(
   // per-radius rather than applying one angular constant - and per EDGE, since
   // the two sides of a fan blank are not the same distance out.
   const halfTheta = geom.sectorAngleRad / 2;
-  const psiInnerStart = -halfTheta - off.left / rhoInner;
-  const psiInnerEnd = halfTheta + off.right / rhoInner;
-  const psiOuterStart = -halfTheta - off.left / rhoOuter;
-  const psiOuterEnd = halfTheta + off.right / rhoOuter;
+  const psiInnerStart = -halfTheta - off.leftBottom / rhoInner;
+  const psiInnerEnd = halfTheta + off.rightBottom / rhoInner;
+  const psiOuterStart = -halfTheta - off.leftTop / rhoOuter;
+  const psiOuterEnd = halfTheta + off.rightTop / rhoOuter;
 
   const points: Point2[] = [];
   const at = (rho: number, psi: number): Point2 => ({
@@ -128,7 +151,18 @@ export function buildFanOutline(
     points.push(at(rhoOuter, psiOuterStart + (psiOuterEnd - psiOuterStart) * t));
   }
 
-  return { boundary, points };
+  return {
+    boundary,
+    points,
+    rhoInnerMm: rhoInner,
+    rhoOuterMm: rhoOuter,
+    corners: {
+      innerLeft: at(rhoInner, psiInnerStart),
+      innerRight: at(rhoInner, psiInnerEnd),
+      outerLeft: at(rhoOuter, psiOuterStart),
+      outerRight: at(rhoOuter, psiOuterEnd),
+    },
+  };
 }
 
 /** Axis-aligned bounds of a set of fan-space points. */

@@ -46,8 +46,8 @@ describe('fan outline construction', () => {
       .filter((p) => Math.abs(Math.hypot(p.x, p.y) - rho) < 1e-6)
       .map((p) => Math.atan2(p.x, -p.y));
     const half = g8.sectorAngleRad / 2;
-    expect((-half - Math.min(...psi)) * rho).toBeCloseTo(c.leftMm + b, 6);
-    expect((Math.max(...psi) - half) * rho).toBeCloseTo(c.rightMm + b, 6);
+    expect((-half - Math.min(...psi)) * rho).toBeCloseTo(c.left.atTopMm + b, 6);
+    expect((Math.max(...psi) - half) * rho).toBeCloseTo(c.right.atTopMm + b, 6);
   });
 
   it('the cut extends each rim by exactly its own configured distance', () => {
@@ -77,9 +77,21 @@ describe('fan outline construction', () => {
     const left = Math.min(...atTop.map((q) => q.psi));
     const right = Math.max(...atTop.map((q) => q.psi));
     // Linear mm out from the trim edge, measured at this radius.
-    expect((-halfTheta - left) * rhoTop).toBeCloseTo(c.leftMm, 6);
-    expect((right - halfTheta) * rhoTop).toBeCloseTo(c.rightMm, 6);
-    expect(c.leftMm).not.toBeCloseTo(c.rightMm, 3);
+    expect((-halfTheta - left) * rhoTop).toBeCloseTo(c.left.atTopMm, 6);
+    expect((right - halfTheta) * rhoTop).toBeCloseTo(c.right.atTopMm, 6);
+
+    // And the same at the bottom arc, from that edge's OWN figure. This is
+    // the part a single per-edge number could not express: the die cuts a
+    // straight line, so its distance from the radial trim edge changes along
+    // the length, and fitting one number to the top missed the real blank's
+    // bottom corner by 1.8mm.
+    const rhoBot = g8.rBottomMm - c.bottomMm;
+    const atBot = polar.filter((q) => Math.abs(q.rho - rhoBot) < 1e-6);
+    expect((-halfTheta - Math.min(...atBot.map((q) => q.psi))) * rhoBot)
+      .toBeCloseTo(c.left.atBottomMm, 6);
+    expect((Math.max(...atBot.map((q) => q.psi)) - halfTheta) * rhoBot)
+      .toBeCloseTo(c.right.atBottomMm, 6);
+    expect(c.left.atTopMm).not.toBeCloseTo(c.left.atBottomMm, 3);
   });
 
   /**
@@ -91,9 +103,9 @@ describe('fan outline construction', () => {
   });
 
   it('safe insets are ABSOLUTE, not additive with the rim curl', () => {
-    // Cupco prints "up to 3mm of the top edge" while the curl is ~7mm, so
+    // Cupco prints "up to 3mm of the top edge" while the curl takes ~9mm, so
     // print runs into the curl zone. Adding the two would wrongly inset by
-    // 10mm and crop artwork the customer expects to see.
+    // ~12mm and crop artwork the customer expects to see.
     const { points } = buildFanOutline(CUP_8OZ, g8, 'safe');
     const radii = points.map((p) => Math.hypot(p.x, p.y));
 
@@ -111,7 +123,73 @@ describe('fan outline construction', () => {
 
   it('print extends into the rim curl zone, as Cupco specified', () => {
     const intrusion = CUP_8OZ.rimBase.rimCurlAllowanceMm - CUP_8OZ.margins.safeTopMm;
-    expect(intrusion).toBeCloseTo(4.0, 6);
+    expect(intrusion).toBeGreaterThan(0);
+    expect(intrusion).toBeCloseTo(5.988, 3);
+  });
+
+  /**
+   * The manufacturer's drawing, checked against the outline we build from the
+   * profile. These are the drawing's OWN labelled figures, not values copied
+   * back out of the profile, so this fails if the profile drifts from the die.
+   *
+   * Source: "Final 8 Oz dimensions Lynn 2.pdf" (B55H90), read by parsing the
+   * PDF's vector content stream.
+   */
+  it('the cut line is the manufacturer drawn blank', () => {
+    const o = buildFanOutline(CUP_8OZ, g8, 'cut', 512);
+
+    // The two arcs, labelled R350.24 and R242.24.
+    expect(o.rhoOuterMm).toBeCloseTo(350.24, 2);
+    expect(o.rhoInnerMm).toBeCloseTo(242.24, 2);
+    // Radial extent, labelled 108.01.
+    expect(o.rhoOuterMm - o.rhoInnerMm).toBeCloseTo(108.01, 1);
+
+    // Width across the seam edges at each arc, labelled 241.59 and 169.7.
+    const { outerLeft, outerRight, innerLeft, innerRight } = o.corners;
+    expect(outerRight.x - outerLeft.x).toBeCloseTo(241.59, 1);
+    expect(innerRight.x - innerLeft.x).toBeCloseTo(169.7, 1);
+
+    // Included angle of the two straight seam edges, labelled 38.88 deg.
+    // Taken as the angle BETWEEN the two edge vectors (atan2 of cross over
+    // dot). Differencing their bearings instead wraps past 180 and reports
+    // the reflex angle, 321 deg.
+    const vec = (a: typeof outerLeft, b: typeof innerLeft) => ({ x: a.x - b.x, y: a.y - b.y });
+    const vL = vec(outerLeft, innerLeft);
+    const vR = vec(outerRight, innerRight);
+    const included =
+      Math.atan2(Math.abs(vL.x * vR.y - vL.y * vR.x), vL.x * vR.x + vL.y * vR.y) *
+      (180 / Math.PI);
+    expect(included).toBeCloseTo(38.88, 1);
+  });
+
+  /**
+   * The drawing hatches its no-print bands over the note "the hatched part is
+   * left blank for printing", and dimensions them 9 at the top and 7 at the
+   * bottom, measured from the CUT. Those two bands are what fixed the body
+   * height: 9mm inside the top arc is where the cup's rim has to be.
+   */
+  it('the cup top sits the drawing 9mm band inside the cut', () => {
+    expect(CUP_8OZ.margins.cut.topMm).toBeCloseTo(9.0, 1);
+    const g = deriveFrustum(CUP_8OZ.dimensions);
+    expect(g.rTopMm + CUP_8OZ.margins.cut.topMm).toBeCloseTo(350.24, 1);
+    // The sector the drawing labels 38.88 deg.
+    expect(g.sectorAngleRad * (180 / Math.PI)).toBeCloseTo(38.88, 1);
+  });
+
+  /**
+   * The regression this replaced. Reading B55H90's 90mm as the BODY height put
+   * R_top at 357.74 - 7.5mm OUTSIDE the die's own top arc, so the cup did not
+   * fit the blank it is cut from. Guard the direction, not just the number.
+   */
+  it('the whole cup fits inside the blank it is cut from', () => {
+    const cut = buildFanOutline(CUP_8OZ, g8, 'cut', 256);
+    const trim = buildFanOutline(CUP_8OZ, g8, 'trim', 256);
+    expect(cut.rhoOuterMm).toBeGreaterThan(trim.rhoOuterMm);
+    expect(cut.rhoInnerMm).toBeLessThan(trim.rhoInnerMm);
+    const cutB = fanBounds(cut.points);
+    const trimB = fanBounds(trim.points);
+    expect(cutB.minX).toBeLessThan(trimB.minX);
+    expect(cutB.maxX).toBeGreaterThan(trimB.maxX);
   });
 
   it('the outline is closed and non-degenerate', () => {

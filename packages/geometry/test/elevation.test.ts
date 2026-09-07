@@ -31,7 +31,8 @@ describe('the cup reads at its real proportions', () => {
     const level = cupElevation(GEOM, { tiltRad: 0 });
     expect(level.yAt(0)).toBeCloseTo(CUP_8OZ.dimensions.heightMm, 10);
     expect(ELEV.yAt(0)).toBeLessThan(level.yAt(0));
-    expect(ELEV.yAt(0)).toBeCloseTo(90 * Math.cos(DEFAULT_TILT_RAD), 6);
+    expect(ELEV.yAt(0)).toBeCloseTo(
+      CUP_8OZ.dimensions.heightMm * Math.cos(DEFAULT_TILT_RAD), 6);
   });
 
   it('collapses the rim to a line when viewed dead level', () => {

@@ -35,7 +35,14 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
   // The cut line, per edge. A blank is not a uniform outset of the cup: the
   // bottom runs past the base by the material the base seam takes, and the
   // two seam edges differ because one laps over the other.
-  const { topMm: cutT, bottomMm: cutB, leftMm: cutL, rightMm: cutR } = profile.margins.cut;
+  //
+  // This template is a RECTANGLE, so each seam edge has to collapse to one
+  // number where the fan carries two (the die cuts a straight line, which is
+  // not a constant distance from a radial one). Take the larger, so the
+  // rectangle covers the blank everywhere rather than cropping it at one end.
+  const { topMm: cutT, bottomMm: cutB } = profile.margins.cut;
+  const cutL = Math.max(profile.margins.cut.left.atTopMm, profile.margins.cut.left.atBottomMm);
+  const cutR = Math.max(profile.margins.cut.right.atTopMm, profile.margins.cut.right.atBottomMm);
   const cutW = W + cutL + cutR;
   const cutH = H + cutT + cutB;
   // Bleed runs OUTSIDE the cut: the blank is cut at the cut line, so that is

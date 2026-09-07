@@ -86,8 +86,10 @@ export function fillToTemplate(
     // blank is not centred on the cup.
     const c = profile.margins.cut;
     const b = profile.margins.bleedMm;
-    const leftU = (c.leftMm + b) / geom.topArcMm;
-    const rightU = (c.rightMm + b) / geom.topArcMm;
+    // Each seam edge carries two offsets; design space is a rectangle and can
+    // hold one. Take the larger so the fill covers the blank at both ends.
+    const leftU = (Math.max(c.left.atTopMm, c.left.atBottomMm) + b) / geom.topArcMm;
+    const rightU = (Math.max(c.right.atTopMm, c.right.atBottomMm) + b) / geom.topArcMm;
     const topV = (c.topMm + b) / geom.slantMm;
     const botV = (c.bottomMm + b) / geom.slantMm;
     uSpan = 1 + leftU + rightU;

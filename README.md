@@ -81,16 +81,28 @@ for the 3D preview, in Node for export, and in the test runner. One implementati
 
 ## The 8oz cup
 
-Dimensions and every print-affecting margin are **confirmed by Cupco**. See
-[packages/geometry/README.md](packages/geometry/README.md) for the maths and the full table.
+Authored from the manufacturer's fan blank drawing (`Drawings/`, title block **B55H90**), read by
+parsing the PDF's vector geometry. See [packages/geometry/README.md](packages/geometry/README.md)
+for the maths and the full table.
 
 ```
-Dt 73.62  Db 55.00  h 90.00 (vertical)
-  -> slant 90.4803mm, sector 37.0423deg, R_bot 267.2618mm, R_top 357.7420mm
-  -> trim 227.28 x 104.32mm; blank (cut) 244.33 x 122.97mm; with bleed 256.92 x 134.51mm
+Dt 73.62  Db 55.01  h 85.76 (vertical, BODY height)
+  -> slant 86.2633mm, sector 38.8323deg, R_bot 254.9890mm, R_top 341.2523mm
+  -> safe 217.33 x 94.58mm; trim 226.88 x 100.76mm
+  -> cut  241.61 x 123.34mm; with bleed 254.29 x 134.86mm
 ```
 
 Arc-length identity `R_top * theta = pi * Dt` closes to 2.8e-14.
+
+**The cut line is the die, measured.** Rebuilding it from the profile lands within **0.0005mm** of
+the drawn blank at all four corners and along both seam edges, and its arcs read R350.24 / R242.24
+against the drawing's own labels. Three more of the drawing's figures fall out of the same fit:
+the 108.01mm radial span, the 241.59 / 169.7mm widths, and the 38.88° between the seam edges.
+
+**The 90mm in B55H90 is the FINISHED height, not the body.** Read as the body height it puts the
+cup's rim 7.5mm *outside* the blank it is cut from — the cup would not fit its own die. Solving
+the body height from the drawing instead gives 85.76mm, which reproduces the drawing's sector
+angle and top radius to 0.012mm. This was a real error in the profile, corrected 2026-09-07.
 
 ## What you can upload
 
@@ -327,6 +339,16 @@ address; a QR split by the glued seam.
 The cut line is a **measurement of the blank**, per edge, not a printing allowance: a fan
 is not a uniform outset of the finished cup. The base runs past the cup by the material
 the base seam consumes, and the two seam edges differ because one laps over the other.
+
+Each seam edge carries **two** numbers, at the top arc and at the bottom, because a die
+cuts a *straight* line and a straight line is not a constant distance from a radial one.
+Fitting one number to the top missed the real blank's bottom corner by 1.8mm; with both,
+the rebuilt edge lands within 0.0005mm of the die over its full 108mm length.
+
+The die also has three corner features this model does not carry — a 5.5 × 5.5mm notch
+bottom-right, a 2 × 8mm chamfer top-left, and an R2 corner bottom-left. All three sit
+inside the no-print bands, so artwork is unaffected, but a die maker reading our dieline
+would notice.
 
 **Bleed is measured from the cut, not from trim.** The blank is cut at the cut line, so
 that is the edge a white sliver can appear at. Measuring bleed from trim — which is what

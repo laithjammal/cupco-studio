@@ -77,7 +77,9 @@ describe('artwork template — the file must actually open', () => {
     // Trim width plus bleed on both sides, plus the page padding.
     const c = CUP_8OZ.margins.cut;
     const bl = CUP_8OZ.margins.bleedMm;
-    const expectedW = g.topArcMm + c.leftMm + c.rightMm + bl * 2 + 18 * 2;
+    const cutL = Math.max(c.left.atTopMm, c.left.atBottomMm);
+    const cutR = Math.max(c.right.atTopMm, c.right.atBottomMm);
+    const expectedW = g.topArcMm + cutL + cutR + bl * 2 + 18 * 2;
     expect(Number(w![1])).toBeCloseTo(expectedW, 1);
     // Height also carries the legend panel, so it must EXCEED the artwork box.
     expect(Number(h![1])).toBeGreaterThan(g.slantMm + c.topMm + c.bottomMm + bl * 2 + 36);

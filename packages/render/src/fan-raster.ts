@@ -23,6 +23,7 @@ import {
   type CupProfile,
   type FrustumGeometry,
   type FanBoundary,
+  type Point2,
 } from '@cupco/geometry';
 import { createImage, sampleBilinear, type RasterImage, type RGBA } from './image';
 
@@ -118,31 +119,30 @@ export function rasteriseFan(
   const image = createImage(widthPx, heightPx);
   const out = image.data;
 
-  // Sector test bounds, in the same units the inverse map produces.
-  // Working in (rho, psi) is cheaper and more numerically stable than a
-  // point-in-polygon test against the tessellated outline.
-  const radii = outline.points.map((p) => Math.hypot(p.x, p.y));
-  const rhoMin = Math.min(...radii);
-  const rhoMax = Math.max(...radii);
-  const halfTheta = geom.sectorAngleRad / 2;
+  // Sector test: two radii and two straight edges. Cheaper and more stable
+  // than a point-in-polygon test against the tessellated outline.
+  const rhoMin = outline.rhoInnerMm;
+  const rhoMax = outline.rhoOuterMm;
 
-  // Angular half-width VARIES with radius: the seam offset is a constant
-  // linear distance, so it subtends a larger angle at the inner arc than at
-  // the outer. A single max angle would over-include near the rim and clip
-  // near the base, so the limit is recomputed per sample radius.
-  // Per EDGE as well as per radius: a fan blank's two seam edges are not the
-  // same distance out from trim.
-  const bleedOut = boundary === 'bleed' ? profile.margins.bleedMm : 0;
-  const seamLeftMm =
-    boundary === 'cut' || boundary === 'bleed' ? profile.margins.cut.leftMm + bleedOut
-    : boundary === 'safe' ? -profile.margins.safeSeamMm
-    : 0;
-  const seamRightMm =
-    boundary === 'cut' || boundary === 'bleed' ? profile.margins.cut.rightMm + bleedOut
-    : boundary === 'safe' ? -profile.margins.safeSeamMm
-    : 0;
-  const psiMinAt = (rho: number) => -halfTheta - seamLeftMm / rho;
-  const psiMaxAt = (rho: number) => halfTheta + seamRightMm / rho;
+  // The seam edges are STRAIGHT lines - that is what a die cuts - so each is a
+  // half-plane test, built from the very corners the outline polygon is drawn
+  // from. Re-deriving the edges here is what would let the raster and the
+  // dieline drift apart.
+  //
+  // The reference point for "inside" is the sector's own mid-point. The apex
+  // will not do: the seam edges pass close to it, so which side it falls on is
+  // decided by rounding rather than by geometry.
+  const inX = 0;
+  const inY = -(rhoMin + rhoMax) / 2;
+  const halfPlane = (a: Point2, b: Point2) => {
+    const nx = -(b.y - a.y);
+    const ny = b.x - a.x;
+    const c = nx * a.x + ny * a.y;
+    const sign = nx * inX + ny * inY - c <= 0 ? 1 : -1;
+    return (x: number, y: number) => sign * (nx * x + ny * y - c) <= 0;
+  };
+  const insideLeft = halfPlane(outline.corners.outerLeft, outline.corners.innerLeft);
+  const insideRight = halfPlane(outline.corners.outerRight, outline.corners.innerRight);
 
   const sample: number[] = [0, 0, 0, 0];
   const acc: number[] = [0, 0, 0, 0];
@@ -162,8 +162,7 @@ export function rasteriseFan(
 
           const rho = Math.hypot(mmX, mmY);
           if (rho < rhoMin || rho > rhoMax) continue;
-          const psi = Math.atan2(mmX, -mmY);
-          if (psi < psiMinAt(rho) || psi > psiMaxAt(rho)) continue;
+          if (!insideLeft(mmX, mmY) || !insideRight(mmX, mmY)) continue;
 
           const uv = fanToDesign({ x: mmX, y: mmY }, geom);
           sampleBilinear(design, uv.u, uv.v, wrapU, sample);

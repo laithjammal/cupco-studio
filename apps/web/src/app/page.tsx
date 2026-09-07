@@ -606,7 +606,8 @@ export default function Page() {
             <tr><td>R bottom</td><td>{geom.rBottomMm.toFixed(3)} mm</td></tr>
             <tr><td>R top</td><td>{geom.rTopMm.toFixed(3)} mm</td></tr>
             <tr><td>Cut — top / base</td><td>{profile.margins.cut.topMm} / {profile.margins.cut.bottomMm} mm</td></tr>
-            <tr><td>Cut — left / right</td><td>{profile.margins.cut.leftMm} / {profile.margins.cut.rightMm} mm</td></tr>
+            <tr><td>Cut — left seam</td><td>{profile.margins.cut.left.atTopMm} / {profile.margins.cut.left.atBottomMm} mm (top / base)</td></tr>
+            <tr><td>Cut — right seam</td><td>{profile.margins.cut.right.atTopMm} / {profile.margins.cut.right.atBottomMm} mm (top / base)</td></tr>
             <tr><td>Bleed beyond the cut</td><td>{profile.margins.bleedMm} mm</td></tr>
           </tbody>
         </table>
