@@ -25,7 +25,6 @@ if (!profile) {
 const g = deriveFrustum(profile.dimensions);
 const bleed = buildFanOutline(profile, g, 'bleed', 512);
 const cut = buildFanOutline(profile, g, 'cut', 512);
-const trim = buildFanOutline(profile, g, 'trim', 512);
 const safe = buildFanOutline(profile, g, 'safe', 512);
 
 const b = fanBounds(bleed.points);
@@ -55,14 +54,13 @@ const svg = `<?xml version="1.0" encoding="UTF-8"?>
   <g transform="translate(${tx.toFixed(4)} ${ty.toFixed(4)})">
     <path d="${outlineToSvgPath(bleed)}" fill="none" stroke="#f472b6" stroke-width="0.25" stroke-dasharray="3 1.5"/>
     <path d="${outlineToSvgPath(cut)}"   fill="none" stroke="#db2777" stroke-width="0.4"/>
-    <path d="${outlineToSvgPath(trim)}"  fill="none" stroke="#000" stroke-width="0.4"/>
     <path d="${outlineToSvgPath(safe)}"  fill="none" stroke="#09c" stroke-width="0.25" stroke-dasharray="1 1"/>
   </g>
   <text x="${pad}" y="${pad - 5.5}" font-family="monospace" font-size="3.5" fill="#333">
     ${profile.displayName} fan - sector ${g.sectorAngleDeg.toFixed(3)}deg, R_bot ${g.rBottomMm.toFixed(2)}mm, R_top ${g.rTopMm.toFixed(2)}mm - 1:1
   </text>
   <text x="${pad}" y="${pad - 1.5}" font-family="monospace" font-size="3" fill="#666">
-    cut R ${cut.rhoInnerMm.toFixed(2)}..${cut.rhoOuterMm.toFixed(2)}  |  bleed (pink dashed) outside it  |  trim black  |  safe blue
+    cut R ${cut.rhoInnerMm.toFixed(2)}..${cut.rhoOuterMm.toFixed(2)}  |  bleed (pale, dashed) outside it  |  safe (blue, dashed) inside
   </text>
   ${warn}
 </svg>

@@ -82,9 +82,17 @@ export interface SafeBounds {
 }
 
 export function safeBounds(profile: CupProfile, geom: FrustumGeometry): SafeBounds {
+  // CLAMPED to the design canvas on purpose.
+  //
+  // The safe margins may be negative, meaning the printable area extends past
+  // the cup's trim line. That is legitimate for a GUIDE, but not for a layout
+  // band: design space v=0..1 is the trim, so an element placed above 1 or
+  // below 0 is simply not on the canvas and never renders. Concepts would be
+  // silently laying artwork into a strip only bleed can reach.
+  const clamp = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
   return {
-    vBottom: profile.margins.safeBottomMm / geom.slantMm,
-    vTop: 1 - profile.margins.safeTopMm / geom.slantMm,
+    vBottom: clamp(profile.margins.safeBottomMm / geom.slantMm),
+    vTop: clamp(1 - profile.margins.safeTopMm / geom.slantMm),
     uInset: profile.margins.safeSeamMm / geom.topArcMm,
   };
 }

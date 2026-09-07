@@ -19,13 +19,34 @@ describe('fan outline construction', () => {
   });
 
   /** safe inside trim inside cut inside bleed, with nothing out of order. */
-  it('nests the four boundaries in the only order that makes sense', () => {
+  it('nests the boundaries in the only order that makes sense', () => {
     const [safe, trim, cut, bleed] = (['safe', 'trim', 'cut', 'bleed'] as const)
       .map((b) => fanBounds(buildFanOutline(CUP_8OZ, g8, b).points));
-    for (const [inner, outer] of [[safe, trim], [trim, cut], [cut, bleed]] as const) {
+    // Safe is compared against the CUT, not the trim. Since 2026-09-07 the
+    // 8oz safe area deliberately extends PAST the trim line - printing runs
+    // into the material that forms the rim curl - so safe-inside-trim is no
+    // longer true and asserting it would be asserting the old profile.
+    // What must hold is that everything stays inside the die.
+    for (const [inner, outer] of [[safe, cut], [trim, cut], [cut, bleed]] as const) {
       expect(inner!.widthMm).toBeLessThan(outer!.widthMm);
       expect(inner!.heightMm).toBeLessThan(outer!.heightMm);
     }
+  });
+
+  /**
+   * The safe area now sits outside the trim vertically, which is intended, but
+   * it must never escape the die - artwork guaranteed to survive cannot be in
+   * a place the blank does not exist.
+   */
+  it('the safe area stays inside the cut, even though it passes the trim', () => {
+    const safe = buildFanOutline(CUP_8OZ, g8, 'safe', 256);
+    const trim = buildFanOutline(CUP_8OZ, g8, 'trim', 256);
+    const cut = buildFanOutline(CUP_8OZ, g8, 'cut', 256);
+
+    expect(safe.rhoOuterMm).toBeGreaterThan(trim.rhoOuterMm);   // past the rim
+    expect(safe.rhoInnerMm).toBeLessThan(trim.rhoInnerMm);      // past the base
+    expect(safe.rhoOuterMm).toBeLessThan(cut.rhoOuterMm);       // but inside the die
+    expect(safe.rhoInnerMm).toBeGreaterThan(cut.rhoInnerMm);
   });
 
   /**
@@ -121,10 +142,13 @@ describe('fan outline construction', () => {
     expect(CUP_8OZ.margins.safeTopMm).not.toBe(CUP_8OZ.margins.safeBottomMm);
   });
 
-  it('print extends into the rim curl zone, as Cupco specified', () => {
+  it('print extends into the rim curl zone', () => {
     const intrusion = CUP_8OZ.rimBase.rimCurlAllowanceMm - CUP_8OZ.margins.safeTopMm;
     expect(intrusion).toBeGreaterThan(0);
-    expect(intrusion).toBeCloseTo(5.988, 3);
+    // 8.988mm of curl, and the safe line now sits 1mm ABOVE the trim, so
+    // printing runs 9.988mm into it. Cupco's original figure was 3mm below
+    // trim, giving 5.988; Laith extended it 4mm 2026-09-07.
+    expect(intrusion).toBeCloseTo(9.988, 3);
   });
 
   /**

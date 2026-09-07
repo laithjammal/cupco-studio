@@ -144,9 +144,16 @@ export interface PrintMargins {
    *
    * Not additive with `rimCurlAllowanceMm`: print may deliberately extend into
    * the curl zone, since the curl rolls outward and stays visible.
+   *
+   * NEGATIVE is legal and means the safe line sits OUTSIDE the trim - printing
+   * is allowed past the cup's own wall, into the material that forms the curl.
+   * Be aware of what that does and does not buy: design space v=0..1 IS the
+   * trim band, so artwork cannot be POSITIONED out there. The strip between
+   * trim and safe can only be filled by bleed, which repeats the artwork's
+   * edge pixels outward.
    */
   safeTopMm: number;
-  /** ABSOLUTE inset from the bottom trim edge to the safe area, mm. */
+  /** ABSOLUTE inset from the bottom trim edge to the safe area, mm. Negative = outside trim. */
   safeBottomMm: number;
   /** ABSOLUTE inset from each seam edge to the safe area, mm. */
   safeSeamMm: number;

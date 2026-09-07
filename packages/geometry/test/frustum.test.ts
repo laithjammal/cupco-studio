@@ -230,8 +230,10 @@ describe('confirmed 8oz margin values', () => {
     // Supplied by Cupco for this press.
     expect(CUP_8OZ.margins.bleedMm).toBe(5.0);
     expect(CUP_8OZ.margins.safeSeamMm).toBe(4.0);
-    expect(CUP_8OZ.margins.safeTopMm).toBe(3.0);
-    expect(CUP_8OZ.margins.safeBottomMm).toBe(2.0);
+    // Extended 4mm at each end on Laith's instruction 2026-09-07, from
+    // Cupco's 3 / 2. Negative = the safe line sits OUTSIDE the trim.
+    expect(CUP_8OZ.margins.safeTopMm).toBe(-1.0);
+    expect(CUP_8OZ.margins.safeBottomMm).toBe(-2.0);
     // From the drawing: lap 7.5mm, "right edge on top".
     expect(CUP_8OZ.seam.overlapMm).toBe(7.5);
     // Rim and base allowances are the same physical facts as the cut line's
@@ -244,7 +246,10 @@ describe('confirmed 8oz margin values', () => {
   it('the printable band is the cup height less the two print limits', () => {
     const g = deriveFrustum(CUP_8OZ.dimensions);
     const printable = g.slantMm - CUP_8OZ.margins.safeTopMm - CUP_8OZ.margins.safeBottomMm;
-    expect(printable).toBeCloseTo(86.2633 - 5, 3);
+    // Both limits are now negative, so the printable band is LONGER than the
+    // cup wall: printing runs past the trim at both ends.
+    expect(printable).toBeCloseTo(86.2633 + 3, 3);
+    expect(printable).toBeGreaterThan(g.slantMm);
   });
 
   /**

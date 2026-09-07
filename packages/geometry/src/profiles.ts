@@ -136,8 +136,18 @@ export const CUP_8OZ: CupProfile = {
     // quoted when bleed was being measured from trim, and 3mm is the more
     // usual allowance beyond a die line.
     bleedMm: 5.0,
-    safeTopMm: 3.0,    // Cupco: "print up to 3mm of the top edge".
-    safeBottomMm: 2.0, // Cupco: "can print to 2mm from the bottom".
+    // Extended 4mm at each end on Laith's instruction 2026-09-07, from
+    // Cupco's 3mm top / 2mm bottom. Both therefore now sit OUTSIDE the trim
+    // line, which is what the negative sign means - see PrintMargins.
+    //
+    //   top    R342.25 - 1.00mm above trim,  7.99mm inside the cut
+    //   bottom R252.99 - 2.00mm below trim, 10.75mm inside the cut
+    //
+    // Note the top is ~1mm past the manufacturer's own hatched no-print band
+    // (the drawing puts that at R341.24, level with trim). The bottom is
+    // 3.75mm the safe side of theirs, which sits at R249.24.
+    safeTopMm: -1.0,
+    safeBottomMm: -2.0,
     safeSeamMm: 4.0,   // Cupco: "print up to 4mm clear on the seam edge".
   },
   seam: {

@@ -95,21 +95,39 @@ describe('safe area', () => {
     expect(rules([el({ kind: 'vector', v: 0.5, heightV: 0.3 })], 'safe-area')).toEqual([]);
   });
 
-  it('measures the overflow of an element touching the very top edge', () => {
-    // An element whose top corner sits exactly at trim (v = 1) is past the
-    // safe line by exactly safeTopMm - 3mm for this cup - by definition of
-    // where that line is. Derived without reference to the rule's own maths.
-    const issues = rules([el({ kind: 'vector', v: 0.9, heightV: 0.2 })], 'safe-area');
-    expect(issues).toHaveLength(1);
-    expect(issues[0]!.remedy).toContain('3.0mm');
-    expect(issues[0]!.measurement).toContain('3.0mm');
+  /**
+   * Since 2026-09-07 the 8oz safe margins are NEGATIVE: the safe line sits
+   * outside the trim, and therefore outside design space, which is the trim
+   * band. So nothing that fits on the canvas can overflow it vertically.
+   *
+   * That is a real narrowing of what this rule catches, and it is deliberate -
+   * so it is asserted rather than left to be discovered.
+   */
+  it('does not flag an element touching the very top edge - safe is above it', () => {
+    expect(CUP_8OZ.margins.safeTopMm).toBeLessThan(0);
+    expect(rules([el({ kind: 'vector', v: 0.9, heightV: 0.2 })], 'safe-area')).toEqual([]);
   });
 
-  it('measures the overflow of an element touching the very bottom edge', () => {
-    // Same argument at the base: exactly safeBottomMm, 2mm.
-    const issues = rules([el({ kind: 'vector', v: 0.1, heightV: 0.2 })], 'safe-area');
+  it('does not flag an element touching the very bottom edge', () => {
+    expect(CUP_8OZ.margins.safeBottomMm).toBeLessThan(0);
+    expect(rules([el({ kind: 'vector', v: 0.1, heightV: 0.2 })], 'safe-area')).toEqual([]);
+  });
+
+  /**
+   * The rule still bites on an element dragged clean off the top of the
+   * canvas. Measured against where the safe line actually is, derived here
+   * rather than taken from the rule's own maths.
+   */
+  it('measures the overflow of an element past the safe line', () => {
+    const slant = deriveFrustum(CUP_8OZ.dimensions).slantMm;
+    const vSafeTop = 1 - CUP_8OZ.margins.safeTopMm / slant;
+    const heightV = 0.2;
+    const over = 3 / slant;                       // exactly 3mm past the line
+    const centre = vSafeTop + over - heightV / 2;
+
+    const issues = rules([el({ kind: 'vector', v: centre, heightV })], 'safe-area');
     expect(issues).toHaveLength(1);
-    expect(issues[0]!.remedy).toContain('2.0mm');
+    expect(issues[0]!.measurement).toContain('3.0mm');
   });
 
   it('never blocks - a bleed off the rim is a legitimate choice', () => {

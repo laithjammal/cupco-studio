@@ -11,7 +11,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
-  buildFanOutline, designToFan, fanToDesign,
+  buildFanOutline, designToFan, fanToDesign, GUIDE_BOUNDARIES,
   type CupProfile, type FrustumGeometry, type FanBoundary,
 } from '@cupco/geometry';
 import { rasteriseFan, fanMmToPixel, type FanRasterTransform } from '@cupco/render';
@@ -199,7 +199,7 @@ export default function FanView({
         )}
       </div>
       <div className="legend">
-        {showGuides && (['bleed', 'cut', 'trim', 'safe'] as const).map((k) => (
+        {showGuides && GUIDE_BOUNDARIES.map((k) => (
           <span key={k} className="legend__item">
             <i style={{ background: GUIDE_STYLE[k].stroke }} />{GUIDE_STYLE[k].label}
           </span>
@@ -235,11 +235,12 @@ function drawGuides(
   ctx.save();
   ctx.lineJoin = 'round';
 
-  for (const b of ['bleed', 'cut', 'trim', 'safe'] as const) {
+  for (const b of GUIDE_BOUNDARIES) {
     const s = GUIDE_STYLE[b];
     traceMm(ctx, buildFanOutline(profile, geom, b, 512).points, t);
     ctx.strokeStyle = s.stroke;
-    ctx.lineWidth = Math.max(1, (b === 'cut' ? 0.5 : b === 'trim' ? 0.4 : 0.25) * scale);
+    // The cut is the die, so it is the one drawn heavy.
+    ctx.lineWidth = Math.max(1, (b === 'cut' ? 0.5 : 0.25) * scale);
     ctx.setLineDash(s.dash.map((d) => d * scale * 0.5));
     ctx.stroke();
   }

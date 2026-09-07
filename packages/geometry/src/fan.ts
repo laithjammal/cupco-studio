@@ -30,6 +30,20 @@ import { designToFan } from './mapping';
 
 export type FanBoundary = 'trim' | 'cut' | 'bleed' | 'safe';
 
+/**
+ * The boundaries drawn as guide lines on the production fan, outermost first.
+ *
+ * `trim` is deliberately NOT among them. It remains the load-bearing geometry -
+ * design space v=0..1 IS the trim band, every mapping is defined against it,
+ * and the 3D preview is its own wrap - but as a drawn line it told a production
+ * operator nothing they act on. What they act on is where the die falls (cut),
+ * how far ink must run past it (bleed), and where artwork is guaranteed to
+ * survive (safe).
+ *
+ * Anything that needs the trim outline can still ask for it by name.
+ */
+export const GUIDE_BOUNDARIES = ['bleed', 'cut', 'safe'] as const satisfies readonly FanBoundary[];
+
 export interface FanOutline {
   boundary: FanBoundary;
   /** Closed polygon in fan space (apex at origin), mm. */

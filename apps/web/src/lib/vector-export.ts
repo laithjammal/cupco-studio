@@ -348,7 +348,6 @@ ${body}
   <g id="dieline" fill="none">
     <path id="bleed" d="${bg}" stroke="#f472b6" stroke-width="0.25" stroke-dasharray="2 1"/>
     <path id="cut" d="${toPathString([cut.points], minX, minY)}" stroke="#db2777" stroke-width="0.4"/>
-    <path id="trim" d="${path(buildFanOutline(profile, geom, 'trim', 1024).points)}" stroke="#0f172a" stroke-width="0.4"/>
     <path id="safe" d="${path(buildFanOutline(profile, geom, 'safe', 1024).points)}" stroke="#0284c7" stroke-width="0.25" stroke-dasharray="1 1"/>
   </g>
 </svg>`;

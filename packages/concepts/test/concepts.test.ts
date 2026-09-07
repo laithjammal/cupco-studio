@@ -119,8 +119,22 @@ describe('placements stay manufacturable', () => {
   const s = safeBounds(CUP_8OZ, geom);
 
   it('safe bounds derive from the profile margins, not guesses', () => {
-    expect(s.vBottom).toBeCloseTo(CUP_8OZ.margins.safeBottomMm / geom.slantMm, 9);
-    expect(s.vTop).toBeCloseTo(1 - CUP_8OZ.margins.safeTopMm / geom.slantMm, 9);
+    const clamp = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+    expect(s.vBottom).toBeCloseTo(clamp(CUP_8OZ.margins.safeBottomMm / geom.slantMm), 9);
+    expect(s.vTop).toBeCloseTo(clamp(1 - CUP_8OZ.margins.safeTopMm / geom.slantMm), 9);
+  });
+
+  /**
+   * The 8oz safe margins are negative - the printable area runs past the cup's
+   * trim line. That is fine for a drawn guide, but design space v=0..1 IS the
+   * trim, so an element laid out above 1 or below 0 is off the canvas and
+   * never renders. The band concepts lay into has to stop at the canvas.
+   */
+  it('never lays out beyond the design canvas, even on negative safe margins', () => {
+    expect(CUP_8OZ.margins.safeTopMm).toBeLessThan(0);
+    expect(CUP_8OZ.margins.safeBottomMm).toBeLessThan(0);
+    expect(s.vBottom).toBe(0);
+    expect(s.vTop).toBe(1);
   });
 
   it('no placement centre falls outside the cup', () => {
