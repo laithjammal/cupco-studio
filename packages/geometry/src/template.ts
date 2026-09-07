@@ -59,6 +59,21 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
   const ox = pad + bl + cutL;
   const oy = pad + bl + cutT;
 
+  /**
+   * A safe inset, in words.
+   *
+   * These can be NEGATIVE, meaning the safe line sits OUTSIDE the trim -
+   * printing is allowed past the cup's own wall, into the material that forms
+   * the rim curl. "-1mm top" is technically true and reads as a mistake, so
+   * say which side of the line it falls on.
+   */
+  const inset = (v: number, outward: string, inward: string) =>
+    v < 0 ? `${(-v).toFixed(v % 1 ? 2 : 0)}mm ${outward}` : `${v.toFixed(v % 1 ? 2 : 0)}mm ${inward}`;
+  const safeDesc =
+    `${inset(safeT, 'above the rim', 'below the rim')} / ` +
+    `${inset(safeB, 'below the base', 'above the base')} / ` +
+    `${safeS}mm in from each seam`;
+
   const label = (x: number, y: number, text: string, anchor = 'start', size = 3, fill = '#64748b') =>
     `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-family="monospace" font-size="${size}" fill="${fill}" text-anchor="${anchor}">${text}</text>`;
 
@@ -73,13 +88,13 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
         'Artwork meant to reach an edge must run all the way out to here. Cutting is never exact; stopping at the cut line leaves a white sliver.'],
       ['stroke="#db2777" stroke-width="0.9"',
         'CUT', `${cutT}mm top / ${cutB}mm base / ${cutL}mm left / ${cutR}mm right`,
-        'The real blank. This is where the die falls — the actual size and shape of the flat fan before it is formed.'],
+        'The real blank, measured off the manufacturer\u2019s die drawing. This is where the die falls \u2014 the actual size and shape of the flat fan before it is formed.'],
       ['stroke="#0f172a" stroke-width="0.9"',
-        'TRIM', `${W.toFixed(1)} x ${H.toFixed(1)}mm`,
-        'The finished cup wall: what is still showing once the cup is formed. The blank itself is bigger — see CUT.'],
+        'ARTWORK AREA', `${W.toFixed(1)} x ${H.toFixed(1)}mm`,
+        'The cup wall unrolled, and the rectangle your artwork must match. It is NOT the outer edge \u2014 the blank is bigger at every edge, see CUT.'],
       ['stroke="#0284c7" stroke-width="0.7" stroke-dasharray="1.4 1.4"',
-        'SAFE AREA', `${st}mm top / ${sb}mm base / ${ss}mm sides`,
-        'Keep logos and text inside this box. Anything outside risks being lost in the rim curl, the base, or the glued seam.'],
+        'SAFE AREA', safeDesc,
+        'Keep logos and text inside this box. Note it sits OUTSIDE the artwork area top and bottom: printing runs into the rim curl and the base on purpose.'],
       ['stroke="#94a3b8" stroke-width="0.6" stroke-dasharray="1.6 1.6"',
         'CENTRE LINE', 'opposite the seam',
         'The point facing a person holding the cup. Best place for a logo.'],
@@ -116,11 +131,11 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
      ===================================================================
      Design space (the unrolled cup). 1:1 millimetres.
 
-       Artwork area (trim) : ${W.toFixed(2)} x ${H.toFixed(2)} mm
+       Artwork area        : ${W.toFixed(2)} x ${H.toFixed(2)} mm   (the cup wall unrolled)
        Blank (to the cut)  : ${cutW.toFixed(2)} x ${cutH.toFixed(2)} mm
        Cut line            : ${cutT}mm top, ${cutB}mm base, ${cutL}mm left, ${cutR}mm right
        With bleed          : ${bleedW.toFixed(2)} x ${bleedH.toFixed(2)} mm (${bl}mm outside the cut)
-       Safe area           : ${safeT}mm top, ${safeB}mm bottom, ${safeS}mm from each seam edge
+       Safe area           : ${safeDesc}
 
      HOW TO USE
        1. Anything meant to reach an edge must extend to the BLEED rectangle,
@@ -133,7 +148,18 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
      THE CUT IS NOT SYMMETRIC
        The blank is bigger than the finished cup, and by different amounts on
        each edge. The base runs ${cutB}mm past the cup because that material is
-       consumed forming the base seam.
+       consumed forming the base seam; the top runs ${cutT}mm past because that
+       is what rolls into the rim curl.
+
+       These are MEASURED off the manufacturer's die drawing, not allowances.
+       On the real fan each seam edge is a straight cut, so its distance from
+       the cup differs at the top and the bottom; this template is a rectangle
+       and takes the LARGER of the two, so it covers the blank everywhere.
+
+     THE SAFE AREA CAN SIT OUTSIDE THE ARTWORK AREA
+       Printing deliberately runs past the cup's wall at the rim and the base -
+       the curl rolls outward and stays visible - so the blue rectangle is
+       taller than the black one. That is not a drawing error.
 
      THE CUP TAPERS
        This rectangle is the cup wall unrolled by ANGLE, so horizontal
@@ -174,7 +200,7 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
           stroke="#94a3b8" stroke-width="0.2" stroke-dasharray="2 2"/>
 
     ${label(ox, oy - cutT - bl - 4.5, `${profile.displayName}  -  artwork template  -  1:1 mm`, 'start', 4, '#0f172a')}
-    ${label(ox, oy - cutT - bl - 1.2, `trim ${W.toFixed(2)} x ${H.toFixed(2)}mm   |   blank ${cutW.toFixed(2)} x ${cutH.toFixed(2)}mm   |   with bleed ${bleedW.toFixed(2)} x ${bleedH.toFixed(2)}mm`)}
+    ${label(ox, oy - cutT - bl - 1.2, `artwork ${W.toFixed(2)} x ${H.toFixed(2)}mm   |   blank ${cutW.toFixed(2)} x ${cutH.toFixed(2)}mm   |   with bleed ${bleedW.toFixed(2)} x ${bleedH.toFixed(2)}mm`)}
     ${label(ox + W / 2, oy + H + cutB + bl + 4.5, 'CENTRE  (faces the customer)', 'middle')}
     ${label(ox + 1, oy + H + cutB + bl + 4.5, 'SEAM', 'start', 3, '#16a34a')}
     ${label(ox + W - 1, oy + H + cutB + bl + 4.5, 'SEAM', 'end', 3, '#16a34a')}

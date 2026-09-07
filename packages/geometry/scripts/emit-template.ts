@@ -12,10 +12,12 @@ if (!p) {
 const g = deriveFrustum(p.dimensions);
 writeFileSync(out, buildArtworkTemplateSvg(p));
 console.log(`Wrote ${out}`);
-console.log(`  artwork area : ${g.topArcMm.toFixed(2)} x ${g.slantMm.toFixed(2)} mm  (trim)`);
+console.log(`  artwork area : ${g.topArcMm.toFixed(2)} x ${g.slantMm.toFixed(2)} mm  (the cup wall unrolled)`);
 const seamL = Math.max(p.margins.cut.left.atTopMm, p.margins.cut.left.atBottomMm);
 const seamR = Math.max(p.margins.cut.right.atTopMm, p.margins.cut.right.atBottomMm);
 console.log(`  to the cut   : ${(g.topArcMm + seamL + seamR).toFixed(2)} x ${(g.slantMm + p.margins.cut.topMm + p.margins.cut.bottomMm).toFixed(2)} mm`);
-console.log(`  safe insets  : top ${p.margins.safeTopMm}  bottom ${p.margins.safeBottomMm}  seam ${p.margins.safeSeamMm} mm`);
+const side = (v: number, out: string, inn: string) => (v < 0 ? `${-v}mm ${out}` : `${v}mm ${inn}`);
+console.log(`  safe area    : ${side(p.margins.safeTopMm, "above the rim", "below the rim")}, `
+  + `${side(p.margins.safeBottomMm, "below the base", "above the base")}, ${p.margins.safeSeamMm}mm in from each seam`);
 console.log(`  seam overlap : ${p.seam.overlapMm} mm`);
 console.log(`  base width   : ${g.bottomArcMm.toFixed(2)} mm (${(100 * g.bottomArcMm / g.topArcMm).toFixed(1)}% of rim - taper compression)`);

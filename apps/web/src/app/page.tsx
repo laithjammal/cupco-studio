@@ -709,8 +709,16 @@ export default function Page() {
             )}
             <label className="txt__lbl" style={{ marginTop: 10 }}>Fill template</label>
             <div className="btnrow">
-              <button onClick={() => onFill('bleed')} title="Cover the whole blank and the bleed beyond it, running off every edge">
-                Fill to bleed
+              <button onClick={() => onFill('bleed-h')} title="Run off the left and right edges, out to the bleed. Height and vertical position are left alone.">
+                Bleed ↔ across
+              </button>
+              <button onClick={() => onFill('bleed-v')} title="Run off the top and bottom edges, out to the bleed. Width and horizontal position are left alone.">
+                Bleed ↕ down
+              </button>
+            </div>
+            <div className="btnrow" style={{ marginTop: 6 }}>
+              <button onClick={() => onFill('bleed')} title="Cover the whole blank and the bleed beyond it, running off every edge. Scales to cover, so it overshoots on one axis.">
+                Bleed all edges
               </button>
               <button onClick={() => onFill('safe')} title="Fit entirely inside the safe area">
                 Fit to safe area

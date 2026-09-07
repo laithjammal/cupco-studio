@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { CUP_8OZ, CUP_12OZ, circumferenceAtV, deriveFrustum, withMargins } from '@cupco/geometry';
+import {
+  CUP_8OZ, CUP_12OZ, circumferenceAtV, deriveFrustum, withMargins,
+  boundaryURange, boundaryVRange,
+} from '@cupco/geometry';
 import { rgbToCmyk } from '@cupco/vector';
 import type { CMYK } from '@cupco/vector';
 import { runPreflight, summarise, MIN_QR_MODULE_MM, MIN_TEXT_MM } from '../src/index';
@@ -462,5 +465,62 @@ describe('the report', () => {
     for (const issue of report.issues) {
       expect(issue.remedy, `${issue.rule} has no remedy`).toBeTruthy();
     }
+  });
+});
+
+/**
+ * Artwork past the bleed.
+ *
+ * The vector export used to carry a clipping mask that cropped this silently.
+ * The mask is gone - it had to be released by hand before the file could be
+ * edited - so the overhang is now real ink on the sheet, and this rule is what
+ * replaces the mask.
+ */
+describe('past the bleed', () => {
+  const V = boundaryVRange(CUP_8OZ, GEOM, 'bleed');
+  const U = boundaryURange(CUP_8OZ, GEOM, 'bleed');
+  const uLeft = Math.min(U.atTop.uLeft, U.atBottom.uLeft);
+  const uRight = Math.max(U.atTop.uRight, U.atBottom.uRight);
+
+  it('passes artwork that fills the bleed exactly', () => {
+    const widthU = uRight - uLeft;
+    const heightV = V.vTop - V.vBottom;
+    expect(rules([el({
+      kind: 'vector', u: (uLeft + uRight) / 2, v: (V.vBottom + V.vTop) / 2, widthU, heightV,
+    })], 'past-bleed')).toEqual([]);
+  });
+
+  it('flags artwork hanging off the seam edge', () => {
+    const widthU = (uRight - uLeft) + 0.05;   // ~5mm too wide
+    const issues = rules([el({
+      kind: 'vector', u: (uLeft + uRight) / 2, v: 0.5, widthU, heightV: 0.2,
+    })], 'past-bleed');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.message).toContain('seam edges');
+  });
+
+  it('flags artwork hanging off the rim', () => {
+    const issues = rules([el({
+      kind: 'vector', u: 0.5, v: V.vTop, widthU: 0.2, heightV: 0.2,
+    })], 'past-bleed');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.message).toContain('rim or base');
+  });
+
+  it('ignores a band on the u axis — it wraps the whole circumference', () => {
+    expect(rules([el({
+      kind: 'band', u: 0.5, v: 0.5, widthU: 3, heightV: 0.2,
+    })], 'past-bleed')).toEqual([]);
+  });
+
+  it('still flags a band that runs off the rim', () => {
+    expect(rules([el({
+      kind: 'band', u: 0.5, v: V.vTop, widthU: 1, heightV: 0.4,
+    })], 'past-bleed')).toHaveLength(1);
+  });
+
+  it('warns rather than blocks — bleeding off the edge is legitimate', () => {
+    const r = run([el({ kind: 'vector', u: 0.5, v: V.vTop, widthU: 0.2, heightV: 0.2 })]);
+    expect(r.passed).toBe(true);
   });
 });

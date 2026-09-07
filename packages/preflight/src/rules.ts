@@ -12,6 +12,7 @@
 
 import {
   designWidthToMm, designHeightToMm, distanceToSeamMm,
+  boundaryURange, boundaryVRange,
 } from '@cupco/geometry';
 import type { CupProfile, FrustumGeometry } from '@cupco/geometry';
 import { totalInkPct } from '@cupco/vector';
@@ -368,6 +369,51 @@ export const bleedGap: Rule = ({ design, geom }) => {
   return issues;
 };
 
+/**
+ * Artwork running past the BLEED, i.e. off the sheet.
+ *
+ * The vector export used to carry a clipping mask that hid this: anything
+ * beyond the blank was silently cropped at output. The mask is gone - it had
+ * to be released by hand before the file could be edited - so the overhang is
+ * now real ink, and on an imposed sheet it lands on the neighbouring cup.
+ *
+ * A little overhang is the POINT of a bleed, so only a genuine overshoot is
+ * reported: past the bleed line itself, not merely past the cut.
+ */
+export const pastBleed: Rule = ({ design, profile, geom }) => {
+  const issues: PreflightIssue[] = [];
+  const v = boundaryVRange(profile, geom, 'bleed');
+  const u = boundaryURange(profile, geom, 'bleed');
+  const uLeft = Math.min(u.atTop.uLeft, u.atBottom.uLeft);
+  const uRight = Math.max(u.atTop.uRight, u.atBottom.uRight);
+
+  for (const el of design.elements) {
+    const e = extent(el);
+    // A band wraps the whole circumference, so it has no meaningful u overhang.
+    const overU = el.kind === 'band'
+      ? 0
+      : Math.max(uLeft - e.minU, e.maxU - uRight, 0);
+    const overV = Math.max(v.vBottom - e.minV, e.maxV - v.vTop, 0);
+    if (overU <= 0 && overV <= 0) continue;
+
+    const worst = overU > 0
+      ? { mm: designWidthToMm(overU, 1, geom), where: 'the seam edges' }
+      : { mm: designHeightToMm(overV, geom), where: 'the rim or base' };
+    // Sub-millimetre is rounding, not a mistake.
+    if (worst.mm < 0.5) continue;
+
+    issues.push({
+      rule: 'past-bleed',
+      severity: 'warning',
+      ...named(el),
+      message: `"${el.name}" runs past the bleed at ${worst.where}, so it prints outside the blank.`,
+      remedy: 'Scale or move it back inside the bleed line. On an imposed sheet this ink lands on the next cup.',
+      measurement: `${mm(worst.mm)} past the bleed`,
+    });
+  }
+  return issues;
+};
+
 /** Elements dragged off the printable area entirely. */
 export const offCanvas: Rule = ({ design }) => {
   const issues: PreflightIssue[] = [];
@@ -410,5 +456,6 @@ export const ALL_RULES: Rule[] = [
   inkLimit,
   tinyText,
   bleedGap,
+  pastBleed,
   invisibleElement,
 ];

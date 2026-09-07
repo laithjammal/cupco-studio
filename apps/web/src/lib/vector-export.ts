@@ -22,7 +22,7 @@
  * bigger, softer file.
  */
 
-import { PDFDocument, cmyk, pushGraphicsState, popGraphicsState, clip, endPath, moveTo, lineTo, closePath } from 'pdf-lib';
+import { PDFDocument, cmyk } from 'pdf-lib';
 import {
   buildFanOutline, fanBounds, warpShapeWrapped, warpShape, DEFAULT_FLATNESS_MM,
   type CupProfile, type FrustumGeometry, type DesignShape, type FanShape, type Point2,
@@ -244,19 +244,19 @@ export async function exportFanPdfVector(
   const pageH = heightMm * PT_PER_MM;
   const page = pdf.addPage([pageW, pageH]);
 
-  // Clip everything to the bleed outline. Without this, a logo dragged past
-  // the edge of the blank would print outside the die and contaminate the
-  // neighbouring cup on the sheet.
+  // NO CLIPPING MASK, and nothing wrapped in a graphics state.
+  //
+  // This file is opened and worked on in Illustrator, and a clip mask has to
+  // be released before anything can be edited - so it was costing the person
+  // downstream more than it bought. Every path is emitted flat, at the top
+  // level, ready to select and edit.
+  //
+  // What the mask used to do was stop artwork dragged past the blank from
+  // printing outside the die and contaminating the neighbouring cup on the
+  // sheet. That risk does not vanish with the mask, it just becomes visible,
+  // so it is now caught in preflight instead - see the `past-bleed` rule -
+  // where it can be fixed rather than silently cropped.
   const clipPts = bleed.points;
-  const ops = [pushGraphicsState()];
-  clipPts.forEach((p, i) => {
-    const x = (p.x - minX) * PT_PER_MM;
-    // PDF y is up; our path space is y-down from the top of the page.
-    const y = pageH - (p.y - minY) * PT_PER_MM;
-    ops.push(i === 0 ? moveTo(x, y) : lineTo(x, y));
-  });
-  ops.push(closePath(), clip(), endPath());
-  page.pushOperators(...ops);
 
   // Background, filling out to the bleed so the die never exposes white.
   page.drawSvgPath(toPathString([clipPts], minX, minY), {
@@ -277,8 +277,6 @@ export async function exportFanPdfVector(
       borderWidth: 0,
     });
   }
-
-  page.pushOperators(popGraphicsState());
 
   const bytes = await pdf.save();
   const buf = new ArrayBuffer(bytes.byteLength);
@@ -340,16 +338,11 @@ export function exportFanSvgVector(
      data-cmyk attribute (SVG has no CMYK colour space). -->
 <svg xmlns="http://www.w3.org/2000/svg" width="${W.toFixed(3)}mm" height="${H.toFixed(3)}mm"
      viewBox="0 0 ${W.toFixed(4)} ${H.toFixed(4)}">
-  <clipPath id="fan"><path d="${bg}"/></clipPath>
-  <g id="artwork" clip-path="url(#fan)">
-    <path d="${bg}" fill="${design.background}"/>
+  <path id="background" d="${bg}" fill="${design.background}"/>
 ${body}
-  </g>
-  <g id="dieline" fill="none">
-    <path id="bleed" d="${bg}" stroke="#f472b6" stroke-width="0.25" stroke-dasharray="2 1"/>
-    <path id="cut" d="${toPathString([cut.points], minX, minY)}" stroke="#db2777" stroke-width="0.4"/>
-    <path id="safe" d="${path(buildFanOutline(profile, geom, 'safe', 1024).points)}" stroke="#0284c7" stroke-width="0.25" stroke-dasharray="1 1"/>
-  </g>
+  <path id="bleed" d="${bg}" fill="none" stroke="#f472b6" stroke-width="0.25" stroke-dasharray="2 1"/>
+  <path id="cut" d="${toPathString([cut.points], minX, minY)}" fill="none" stroke="#db2777" stroke-width="0.4"/>
+  <path id="safe" d="${path(buildFanOutline(profile, geom, 'safe', 1024).points)}" fill="none" stroke="#0284c7" stroke-width="0.25" stroke-dasharray="1 1"/>
 </svg>`;
 
   return {

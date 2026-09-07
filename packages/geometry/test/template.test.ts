@@ -103,9 +103,26 @@ describe('artwork template — the file must actually open', () => {
 
   it('the legend explains every guide line that is drawn', () => {
     const svg = buildArtworkTemplateSvg(CUP_8OZ);
-    for (const term of ['BLEED', 'CUT', 'TRIM', 'SAFE AREA', 'CENTRE LINE']) {
+    // 'ARTWORK AREA' rather than 'TRIM': in this template that rectangle is
+    // the thing a designer has to match, and calling it trim invited it to be
+    // read as the outer edge of the sheet.
+    for (const term of ['BLEED', 'CUT', 'ARTWORK AREA', 'SAFE AREA', 'CENTRE LINE']) {
       expect(svg).toContain(term);
     }
+  });
+
+  /**
+   * The 8oz safe margins are negative - the safe line sits OUTSIDE the cup
+   * wall. Rendering that as "-1mm top" is true and reads as a mistake, so the
+   * template has to say which side of the line it means.
+   */
+  it('describes a safe margin that falls outside the wall in words', () => {
+    const svg = buildArtworkTemplateSvg(CUP_8OZ);
+    expect(CUP_8OZ.margins.safeTopMm).toBeLessThan(0);
+    expect(svg).toContain('above the rim');
+    expect(svg).toContain('below the base');
+    expect(svg).not.toContain('-1mm');
+    expect(svg).not.toContain('-2mm');
   });
 
   it('states the real measurements, not placeholders', () => {

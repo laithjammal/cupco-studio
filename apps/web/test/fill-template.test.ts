@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CUP_8OZ, deriveFrustum, boundaryURange, boundaryVRange, designToFan, buildFanOutline,
 } from '@cupco/geometry';
-import { fillToTemplate } from '../src/lib/tools';
+import { fillToTemplate, type FillMode } from '../src/lib/tools';
 import type { DesignElement } from '../src/lib/design';
 
 const geom = deriveFrustum(CUP_8OZ.dimensions);
@@ -21,7 +21,7 @@ const geom = deriveFrustum(CUP_8OZ.dimensions);
 // per-type fields are not reachable through it. These name what the patch is
 // asserted to carry, at the one place the cast lives.
 type Patch = Partial<Record<'u' | 'v' | 'widthU' | 'heightV' | 'sizeV', number>>;
-const patch = (e: DesignElement, mode: 'bleed' | 'safe'): Patch =>
+const patch = (e: DesignElement, mode: FillMode): Patch =>
   fillToTemplate(e, CUP_8OZ, geom, mode) as Patch;
 
 const band = (over: Partial<DesignElement> = {}): DesignElement => ({
@@ -121,5 +121,55 @@ describe('fit to safe area', () => {
     const s = patch(box(), 'safe');
     const b = patch(box(), 'bleed');
     expect(s.widthU!).toBeLessThan(b.widthU!);
+  });
+});
+
+/**
+ * Single-axis fills.
+ *
+ * 'bleed' scales to COVER, taking the larger of the two ratios, so asking for
+ * a sideways bleed also grew the element tall enough to swallow the cup. One
+ * axis at a time was not expressible, and it is the common case.
+ */
+describe('single-axis bleed', () => {
+  it('bleed-h reaches both seam edges and leaves v alone', () => {
+    const before = box({ v: 0.32 });
+    const p = patch(before, 'bleed-h');
+    const u = boundaryURange(CUP_8OZ, geom, 'bleed');
+    const halfU = p.widthU! / 2;
+    expect(p.u! - halfU).toBeLessThanOrEqual(Math.min(u.atTop.uLeft, u.atBottom.uLeft) + 1e-9);
+    expect(p.u! + halfU).toBeGreaterThanOrEqual(Math.max(u.atTop.uRight, u.atBottom.uRight) - 1e-9);
+    // The whole point: it must not move vertically.
+    expect(p.v).toBeUndefined();
+  });
+
+  it('bleed-v reaches the rim and the base and leaves u alone', () => {
+    const p = patch(box({ u: 0.2 }), 'bleed-v');
+    expect(p.u).toBeUndefined();
+    const v = boundaryVRange(CUP_8OZ, geom, 'bleed');
+    expect(p.v!).toBeCloseTo((v.vBottom + v.vTop) / 2, 9);
+  });
+
+  it('each axis mode scales less than filling both, which has to overshoot', () => {
+    const both = patch(box(), 'bleed');
+    const h = patch(box(), 'bleed-h');
+    const v = patch(box(), 'bleed-v');
+    expect(both.widthU!).toBeGreaterThanOrEqual(h.widthU!);
+    expect(both.widthU!).toBeGreaterThanOrEqual(v.widthU!);
+    // A square box on a blank wider than it is tall bleeds sideways at a
+    // smaller scale than it bleeds top-to-bottom.
+    expect(h.widthU).not.toBeCloseTo(v.widthU!, 6);
+  });
+
+  it('a band ignores bleed-h — it already wraps the whole circumference', () => {
+    const p = patch(band(), 'bleed-h');
+    expect(p.heightV).toBeUndefined();
+    expect(p.v).toBeUndefined();
+  });
+
+  it('a band bleeds vertically to the full height of the blank', () => {
+    const p = patch(band(), 'bleed-v');
+    const v = boundaryVRange(CUP_8OZ, geom, 'bleed');
+    expect(p.heightV!).toBeCloseTo(v.vTop - v.vBottom, 9);
   });
 });

@@ -53,17 +53,25 @@ export function sampleColor(
 /* Fill to template                                                            */
 /* -------------------------------------------------------------------------- */
 
-export type FillMode = 'bleed' | 'safe';
+export type FillMode = 'bleed' | 'bleed-h' | 'bleed-v' | 'safe';
 
 /**
  * Scale and centre an element so it fills the printable template.
  *
- * Two sensible targets:
- *   'bleed' — cover the whole blank and the bleed beyond it, so the artwork
- *             runs off every edge with nothing left unprinted. Overshoots
- *             deliberately.
- *   'safe'  — fit entirely inside the safe area, so nothing is cropped by the
- *             rim curl, the base, or the glue seam.
+ *   'bleed'    cover the whole blank and the bleed beyond it, running off
+ *              every edge. Overshoots on one axis deliberately.
+ *   'bleed-h'  run off the LEFT and RIGHT edges only, leaving the element's
+ *              height and vertical position alone.
+ *   'bleed-v'  run off the TOP and BOTTOM edges only, leaving its width and
+ *              horizontal position alone.
+ *   'safe'     fit entirely inside the safe area, so nothing is cropped by
+ *              the rim curl, the base, or the glue seam.
+ *
+ * The two single-axis modes exist because 'bleed' scales to COVER: it takes
+ * the larger of the two ratios, so a band asked to bleed sideways also grew
+ * tall enough to swallow the cup, and a tall logo asked to bleed top-to-bottom
+ * grew wider than the blank. Wanting one axis to bleed is the common case, and
+ * it was not expressible.
  *
  * Rotation is cleared: a rotated element cannot fill a rectangle without
  * either gaps or a much larger scale, and silently doing the latter would be
@@ -87,14 +95,16 @@ export function fillToTemplate(
   // "Fill to bleed" therefore stopped 2.9mm inside the blank on each side, and
   // "fit to safe" left artwork 1.0mm OUTSIDE the safe area, which is the
   // dangerous direction.
-  const u = boundaryURange(profile, geom, mode === 'bleed' ? 'bleed' : 'safe');
-  const v = boundaryVRange(profile, geom, mode === 'bleed' ? 'bleed' : 'safe');
+  const covering = mode !== 'safe';
+  const target = covering ? 'bleed' : 'safe';
+  const u = boundaryURange(profile, geom, target);
+  const v = boundaryVRange(profile, geom, target);
 
   // COVER takes the widest reading of the boundary, CONTAIN the narrowest.
-  const uLeft = mode === 'bleed'
+  const uLeft = covering
     ? Math.min(u.atTop.uLeft, u.atBottom.uLeft)
     : Math.max(u.atTop.uLeft, u.atBottom.uLeft);
-  const uRight = mode === 'bleed'
+  const uRight = covering
     ? Math.max(u.atTop.uRight, u.atBottom.uRight)
     : Math.min(u.atTop.uRight, u.atBottom.uRight);
 
@@ -110,19 +120,31 @@ export function fillToTemplate(
   if (curU <= 0 || curV <= 0) return {};
 
   // 'bleed' covers (scale by the LARGER ratio, overflow is intended);
-  // 'safe' contains (scale by the SMALLER ratio, nothing is cropped).
-  const ratio = mode === 'bleed'
-    ? Math.max(uSpan / curU, vSpan / curV)
+  // 'safe' contains (scale by the SMALLER ratio, nothing is cropped);
+  // the single-axis modes take only the axis they are named for.
+  const ratio =
+    mode === 'bleed' ? Math.max(uSpan / curU, vSpan / curV)
+    : mode === 'bleed-h' ? uSpan / curU
+    : mode === 'bleed-v' ? vSpan / curV
     : Math.min(uSpan / curU, vSpan / curV);
 
-  const patch: Record<string, unknown> = { u: uCentre, v: vCentre, rotation: 0 };
+  // A single-axis fill must not move the element on the OTHER axis - that is
+  // the whole point of asking for one axis.
+  const patch: Record<string, unknown> = { rotation: 0 };
+  if (mode !== 'bleed-v') patch.u = uCentre;
+  if (mode !== 'bleed-h') patch.v = vCentre;
+
   if (el.type === 'image' || el.type === 'vector' || el.type === 'qr') {
     patch.widthU = Math.max(0.02, Math.min(6, el.widthU * ratio));
   } else if (el.type === 'band') {
-    // Already full width; filling means taking the full height of the target.
+    // A band already spans the full circumference and wraps through the seam,
+    // so it bleeds sideways whatever its width says. Only its height is worth
+    // setting, and 'bleed-h' has nothing to do.
+    //
     // NOT clamped to 1: the blank is taller than the cup, so filling to the
     // bleed needs heightV ~1.37. Clamping to 1 stopped a band 31.7mm short of
     // the blank - it reached the trim and no further.
+    if (mode === 'bleed-h') return { rotation: 0 } as Partial<DesignElement>;
     patch.heightV = Math.max(0.01, Math.min(3, vSpan));
   } else {
     patch.sizeV = Math.max(0.015, Math.min(2, el.sizeV * ratio));
