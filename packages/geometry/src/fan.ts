@@ -1,10 +1,16 @@
 /**
  * Fan outline construction - the production dieline.
  *
- * Produces the annular-sector boundary for a profile at a chosen offset:
- * trim, the cut line (outset) or the safe area (inset). These are the lines
- * the internal Production Studio draws, and the shapes the export clips
- * against.
+ * Produces the annular-sector boundary for a profile at a chosen offset.
+ * Four lines, innermost outward:
+ *
+ *   safe   keep logos and text inside this
+ *   trim   the finished cup wall - what still shows once the cup is formed
+ *   cut    the real blank's own outline, where the die falls
+ *   bleed  ink carries this far past the cut, so the die never exposes white
+ *
+ * These are the lines the internal Production Studio draws, and the shapes
+ * the export clips against.
  *
  * Offsets are applied in the natural directions of the sector:
  *   - radially at the top and bottom arcs (rho +/- offset)
@@ -20,7 +26,7 @@ import type { FrustumGeometry } from './frustum';
 import type { CupProfile, Point2 } from './types';
 import { designToFan } from './mapping';
 
-export type FanBoundary = 'trim' | 'cut' | 'safe';
+export type FanBoundary = 'trim' | 'cut' | 'bleed' | 'safe';
 
 export interface FanOutline {
   boundary: FanBoundary;
@@ -46,6 +52,16 @@ function offsetsFor(boundary: FanBoundary, profile: CupProfile) {
       // Asymmetric on purpose. See CutMargins.
       const c = profile.margins.cut;
       return { top: c.topMm, bottom: c.bottomMm, left: c.leftMm, right: c.rightMm };
+    }
+    case 'bleed': {
+      // OUTSIDE the cut, not outside trim: the blank is cut at the cut line,
+      // so that is the edge ink has to carry past.
+      const c = profile.margins.cut;
+      const b = profile.margins.bleedMm;
+      return {
+        top: c.topMm + b, bottom: c.bottomMm + b,
+        left: c.leftMm + b, right: c.rightMm + b,
+      };
     }
     case 'safe':
       // Safe insets are ABSOLUTE distances from the trim edge, NOT additive

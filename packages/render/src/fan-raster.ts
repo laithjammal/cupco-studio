@@ -29,7 +29,7 @@ import { createImage, sampleBilinear, type RasterImage, type RGBA } from './imag
 export interface FanRasterOptions {
   /** Output resolution. Defaults to the profile's exportDpi. */
   dpi?: number;
-  /** Which boundary the output canvas should cover. Defaults to 'cut'. */
+  /** Which boundary the output canvas should cover. Defaults to 'bleed', the outermost. */
   boundary?: FanBoundary;
   /** Fill for pixels outside the sector. Defaults to transparent. */
   background?: RGBA;
@@ -92,7 +92,7 @@ export function rasteriseFan(
   options: FanRasterOptions = {},
 ): FanRasterResult {
   const dpi = options.dpi ?? profile.exportDpi;
-  const boundary = options.boundary ?? 'cut';
+  const boundary = options.boundary ?? 'bleed';
   const wrapU = options.wrapU ?? true;
   const ss = Math.max(1, Math.floor(options.supersample ?? 1));
   const bg = options.background ?? ([0, 0, 0, 0] as const);
@@ -132,12 +132,13 @@ export function rasteriseFan(
   // near the base, so the limit is recomputed per sample radius.
   // Per EDGE as well as per radius: a fan blank's two seam edges are not the
   // same distance out from trim.
+  const bleedOut = boundary === 'bleed' ? profile.margins.bleedMm : 0;
   const seamLeftMm =
-    boundary === 'cut' ? profile.margins.cut.leftMm
+    boundary === 'cut' || boundary === 'bleed' ? profile.margins.cut.leftMm + bleedOut
     : boundary === 'safe' ? -profile.margins.safeSeamMm
     : 0;
   const seamRightMm =
-    boundary === 'cut' ? profile.margins.cut.rightMm
+    boundary === 'cut' || boundary === 'bleed' ? profile.margins.cut.rightMm + bleedOut
     : boundary === 'safe' ? -profile.margins.safeSeamMm
     : 0;
   const psiMinAt = (rho: number) => -halfTheta - seamLeftMm / rho;

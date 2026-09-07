@@ -76,10 +76,11 @@ describe('artwork template — the file must actually open', () => {
     expect(h).not.toBeNull();
     // Trim width plus bleed on both sides, plus the page padding.
     const c = CUP_8OZ.margins.cut;
-    const expectedW = g.topArcMm + c.leftMm + c.rightMm + 18 * 2;
+    const bl = CUP_8OZ.margins.bleedMm;
+    const expectedW = g.topArcMm + c.leftMm + c.rightMm + bl * 2 + 18 * 2;
     expect(Number(w![1])).toBeCloseTo(expectedW, 1);
     // Height also carries the legend panel, so it must EXCEED the artwork box.
-    expect(Number(h![1])).toBeGreaterThan(g.slantMm + c.topMm + c.bottomMm + 36);
+    expect(Number(h![1])).toBeGreaterThan(g.slantMm + c.topMm + c.bottomMm + bl * 2 + 36);
   });
 
   it('has a viewBox matching its declared size, so it scales correctly', () => {
@@ -100,7 +101,7 @@ describe('artwork template — the file must actually open', () => {
 
   it('the legend explains every guide line that is drawn', () => {
     const svg = buildArtworkTemplateSvg(CUP_8OZ);
-    for (const term of ['CUT', 'TRIM', 'SAFE AREA', 'CENTRE LINE']) {
+    for (const term of ['BLEED', 'CUT', 'TRIM', 'SAFE AREA', 'CENTRE LINE']) {
       expect(svg).toContain(term);
     }
   });

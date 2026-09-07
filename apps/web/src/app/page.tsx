@@ -448,8 +448,8 @@ export default function Page() {
   const onFill = useCallback((mode: FillMode) => {
     if (!selectedId || !selected) return;
     commitElement(selectedId, fillToTemplate(selected, profile, geom, mode));
-    setStatus(mode === 'cut'
-      ? 'Filled to the cut line — artwork runs off every edge'
+    setStatus(mode === 'bleed'
+      ? 'Filled past the cut line — artwork runs off every edge'
       : 'Fitted inside the safe area');
   }, [selectedId, selected, profile, geom, commitElement]);
 
@@ -607,6 +607,7 @@ export default function Page() {
             <tr><td>R top</td><td>{geom.rTopMm.toFixed(3)} mm</td></tr>
             <tr><td>Cut — top / base</td><td>{profile.margins.cut.topMm} / {profile.margins.cut.bottomMm} mm</td></tr>
             <tr><td>Cut — left / right</td><td>{profile.margins.cut.leftMm} / {profile.margins.cut.rightMm} mm</td></tr>
+            <tr><td>Bleed beyond the cut</td><td>{profile.margins.bleedMm} mm</td></tr>
           </tbody>
         </table>
         </Section>
@@ -686,8 +687,8 @@ export default function Page() {
             )}
             <label className="txt__lbl" style={{ marginTop: 10 }}>Fill template</label>
             <div className="btnrow">
-              <button onClick={() => onFill('cut')} title="Cover the whole blank out to the cut line, running off every edge">
-                Fill to cut
+              <button onClick={() => onFill('bleed')} title="Cover the whole blank and the bleed beyond it, running off every edge">
+                Fill to bleed
               </button>
               <button onClick={() => onFill('safe')} title="Fit entirely inside the safe area">
                 Fit to safe area

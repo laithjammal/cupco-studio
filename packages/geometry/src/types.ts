@@ -99,8 +99,26 @@ export interface CutMargins {
 }
 
 export interface PrintMargins {
-  /** Where the blank is cut, per edge. */
+  /**
+   * Where the blank is cut, per edge — the real fan's own outline.
+   *
+   * This is a MEASUREMENT of the blank, not a printing allowance. It is what
+   * the die does.
+   */
   cut: CutMargins;
+  /**
+   * How far artwork runs OUTSIDE the cut line, mm.
+   *
+   * Note the reference: bleed is measured from the CUT, not from trim. The
+   * blank is cut at the cut line, so that is the edge a white sliver can
+   * appear at, and ink has to carry past it. Measuring bleed from trim - which
+   * is what this did - put the bleed line INSIDE the blank on any edge where
+   * the cut ran further out, which is the opposite of a bleed.
+   *
+   * Uniform on all four edges, because unlike the cut this is a printing
+   * tolerance rather than a property of the blank.
+   */
+  bleedMm: number;
   /**
    * ABSOLUTE inset from the top trim edge to the safe area, mm.
    *

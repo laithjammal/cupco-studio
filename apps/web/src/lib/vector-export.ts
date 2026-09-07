@@ -220,7 +220,8 @@ export async function exportFanPdfVector(
   onProgress?.('Warping vector paths…');
 
   const cut = buildFanOutline(profile, geom, 'cut', 1024);
-  const b = fanBounds(cut.points);
+  const bleed = buildFanOutline(profile, geom, 'bleed', 1024);
+  const b = fanBounds(bleed.points);
   const pad = 3;
   const minX = b.minX - pad, minY = b.minY - pad;
   const widthMm = b.widthMm + pad * 2;
@@ -234,7 +235,7 @@ export async function exportFanPdfVector(
   pdf.setProducer('Cupco Studio');
   pdf.setSubject(
     `Vector CMYK fan. Blank ${widthMm.toFixed(2)} x ${heightMm.toFixed(2)} mm incl. ` +
-    `to the cut line. Sector ${geom.sectorAngleDeg.toFixed(4)} deg, ` +
+    `to the bleed. Sector ${geom.sectorAngleDeg.toFixed(4)} deg, ` +
     `R_bottom ${geom.rBottomMm.toFixed(4)} mm, R_top ${geom.rTopMm.toFixed(4)} mm. ` +
     `Path flatness ${toleranceMm}mm. NOT PDF/X: no output intent or ICC profile.`,
   );
@@ -243,10 +244,10 @@ export async function exportFanPdfVector(
   const pageH = heightMm * PT_PER_MM;
   const page = pdf.addPage([pageW, pageH]);
 
-  // Clip everything to the cut outline. Without this, a logo dragged past
+  // Clip everything to the bleed outline. Without this, a logo dragged past
   // the edge of the blank would print outside the die and contaminate the
   // neighbouring cup on the sheet.
-  const clipPts = cut.points;
+  const clipPts = bleed.points;
   const ops = [pushGraphicsState()];
   clipPts.forEach((p, i) => {
     const x = (p.x - minX) * PT_PER_MM;
@@ -257,7 +258,7 @@ export async function exportFanPdfVector(
   ops.push(closePath(), clip(), endPath());
   page.pushOperators(...ops);
 
-  // Background, filling the blank out to the cut line.
+  // Background, filling out to the bleed so the die never exposes white.
   page.drawSvgPath(toPathString([clipPts], minX, minY), {
     x: 0, y: pageH, scale: PT_PER_MM,
     color: inkFor(hexToRgbLocal(design.background), palette),
@@ -306,7 +307,8 @@ export function exportFanSvgVector(
   toleranceMm: number = DEFAULT_FLATNESS_MM,
 ): { blob: Blob; pathCount: number; pointCount: number } {
   const cut = buildFanOutline(profile, geom, 'cut', 1024);
-  const b = fanBounds(cut.points);
+  const bleed = buildFanOutline(profile, geom, 'bleed', 1024);
+  const b = fanBounds(bleed.points);
   const pad = 3;
   const minX = b.minX - pad, minY = b.minY - pad;
   const W = b.widthMm + pad * 2, H = b.heightMm + pad * 2;
@@ -314,7 +316,7 @@ export function exportFanSvgVector(
   const shapes = buildFanShapes(design, profile, geom, toleranceMm);
   let pointCount = 0;
 
-  const bg = toPathString([cut.points], minX, minY);
+  const bg = toPathString([bleed.points], minX, minY);
   const body = shapes.map((s) => {
     const d = toPathString(s.subpaths, minX, minY);
     if (!d) return '';
@@ -344,7 +346,8 @@ export function exportFanSvgVector(
 ${body}
   </g>
   <g id="dieline" fill="none">
-    <path id="cut" d="${bg}" stroke="#db2777" stroke-width="0.25" stroke-dasharray="2 1"/>
+    <path id="bleed" d="${bg}" stroke="#f472b6" stroke-width="0.25" stroke-dasharray="2 1"/>
+    <path id="cut" d="${toPathString([cut.points], minX, minY)}" stroke="#db2777" stroke-width="0.4"/>
     <path id="trim" d="${path(buildFanOutline(profile, geom, 'trim', 1024).points)}" stroke="#0f172a" stroke-width="0.4"/>
     <path id="safe" d="${path(buildFanOutline(profile, geom, 'safe', 1024).points)}" stroke="#0284c7" stroke-width="0.25" stroke-dasharray="1 1"/>
   </g>

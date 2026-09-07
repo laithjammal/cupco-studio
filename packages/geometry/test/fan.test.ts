@@ -18,15 +18,36 @@ describe('fan outline construction', () => {
     expect(Math.max(...radii)).toBeCloseTo(g8.rTopMm, 6);
   });
 
-  it('the cut line is outside trim, the safe area is inside it', () => {
-    const trim = fanBounds(buildFanOutline(CUP_8OZ, g8, 'trim').points);
-    const cut = fanBounds(buildFanOutline(CUP_8OZ, g8, 'cut').points);
-    const safe = fanBounds(buildFanOutline(CUP_8OZ, g8, 'safe').points);
+  /** safe inside trim inside cut inside bleed, with nothing out of order. */
+  it('nests the four boundaries in the only order that makes sense', () => {
+    const [safe, trim, cut, bleed] = (['safe', 'trim', 'cut', 'bleed'] as const)
+      .map((b) => fanBounds(buildFanOutline(CUP_8OZ, g8, b).points));
+    for (const [inner, outer] of [[safe, trim], [trim, cut], [cut, bleed]] as const) {
+      expect(inner!.widthMm).toBeLessThan(outer!.widthMm);
+      expect(inner!.heightMm).toBeLessThan(outer!.heightMm);
+    }
+  });
 
-    expect(cut.widthMm).toBeGreaterThan(trim.widthMm);
-    expect(cut.heightMm).toBeGreaterThan(trim.heightMm);
-    expect(safe.widthMm).toBeLessThan(trim.widthMm);
-    expect(safe.heightMm).toBeLessThan(trim.heightMm);
+  /**
+   * Bleed is measured from the CUT, not from trim. Measuring it from trim put
+   * the bleed line INSIDE the blank on any edge where the cut ran further out,
+   * which is the opposite of what a bleed is for.
+   */
+  it('puts the bleed a uniform distance outside the cut, on every edge', () => {
+    const b = CUP_8OZ.margins.bleedMm;
+    const c = CUP_8OZ.margins.cut;
+    const radii = (which: 'cut' | 'bleed') =>
+      buildFanOutline(CUP_8OZ, g8, which, 512).points.map((p) => Math.hypot(p.x, p.y));
+    expect(Math.max(...radii('bleed')) - Math.max(...radii('cut'))).toBeCloseTo(b, 6);
+    expect(Math.min(...radii('cut')) - Math.min(...radii('bleed'))).toBeCloseTo(b, 6);
+    // And on the seam edges, measured as linear mm at the outer radius.
+    const rho = g8.rTopMm + c.topMm + b;
+    const psi = buildFanOutline(CUP_8OZ, g8, 'bleed', 512).points
+      .filter((p) => Math.abs(Math.hypot(p.x, p.y) - rho) < 1e-6)
+      .map((p) => Math.atan2(p.x, -p.y));
+    const half = g8.sectorAngleRad / 2;
+    expect((-half - Math.min(...psi)) * rho).toBeCloseTo(c.leftMm + b, 6);
+    expect((Math.max(...psi) - half) * rho).toBeCloseTo(c.rightMm + b, 6);
   });
 
   it('the cut extends each rim by exactly its own configured distance', () => {

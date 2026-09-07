@@ -54,7 +54,7 @@ npm run dev -w @cupco/web     # http://localhost:3000
 
 Five tabs: **Concepts** (ten generated layouts), **Design** (the logical canvas),
 **3D Preview** (rotate/zoom/pan the real 8oz cup), **Production Fan** (the warped fan
-with its cut/trim/safe dieline, and export), and **Mockups** (the cup staged in
+with its bleed/cut/trim/safe dieline, and export), and **Mockups** (the cup staged in
 five settings, for sending to customers).
 
 The sidebar holds what you *set* — project, preflight, cup, artwork, the selected element,
@@ -87,8 +87,7 @@ Dimensions and every print-affecting margin are **confirmed by Cupco**. See
 ```
 Dt 73.62  Db 55.00  h 90.00 (vertical)
   -> slant 90.4803mm, sector 37.0423deg, R_bot 267.2618mm, R_top 357.7420mm
-  -> trim 227.28 x 104.32mm; blank to the cut 244.33 x 122.97mm
-  -> export 2957 x 1524px @ 300dpi
+  -> trim 227.28 x 104.32mm; blank (cut) 244.33 x 122.97mm; with bleed 256.92 x 134.51mm
 ```
 
 Arc-length identity `R_top * theta = pi * Dt` closes to 2.8e-14.
@@ -316,20 +315,26 @@ operators to override everything, and then the one real error goes through with 
 **Blocks export:** placeholder cup dimensions; a QR code still holding its placeholder
 address; a QR split by the glued seam.
 
-### The cut line is not a bleed
+### Four lines, and what each one is
 
-The outermost line on the fan is where the blank is **die-cut**, and it is not a uniform
-outset of the finished cup. Measured off a real fan blank on 2026-09-07: **9mm** past trim
-at the top, **7mm** at the base, **9mm** on the left seam edge and **3mm** on the right.
+| | | |
+|---|---|---|
+| **Safe** | inside trim | keep logos and text inside it |
+| **Trim** | the finished cup wall | what still shows once the cup is formed |
+| **Cut** | **the real blank** | where the die falls — the actual flat fan |
+| **Bleed** | outside the cut | ink carries this far past the die |
 
-The base figure is the one with a physical reason: that 7mm is consumed forming the base
-seam, so the blank is longer than the cup by exactly that much. The two seam edges differ
-because one laps over the other.
+The cut line is a **measurement of the blank**, per edge, not a printing allowance: a fan
+is not a uniform outset of the finished cup. The base runs past the cup by the material
+the base seam consumes, and the two seam edges differ because one laps over the other.
 
-Before this the app drew a uniform 5mm "bleed" — the figure Cupco gave verbally — which
-made a blank of the wrong shape in every direction. The seam overlap line has been removed
-from the dieline; `seam.overlapMm` is still recorded and still drives the preflight rules
-about artwork crossing the glued lap.
+**Bleed is measured from the cut, not from trim.** The blank is cut at the cut line, so
+that is the edge a white sliver can appear at. Measuring bleed from trim — which is what
+this did — put the bleed line *inside* the blank on any edge where the cut ran further
+out, which is the opposite of what a bleed is for.
+
+The seam overlap line has been removed from the dieline. `seam.overlapMm` is still
+recorded and still drives the preflight rules about artwork crossing the glued lap.
 
 **Warns:** artwork in the rim or base curl, or inside the glue-seam margin; a logo split
 by the seam; bitmaps under 300dpi *at printed size*; total ink over 300%; text under

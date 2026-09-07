@@ -94,6 +94,9 @@ export const CUP_8OZ: CupProfile = {
       leftMm: 9.0,    // was 5, out a further 4
       rightMm: 3.0,   // was 5, IN by 2 - this edge laps under the other
     },
+    // Cupco: "bleed of 5mm is good". Now measured from the CUT line rather
+    // than from trim, so ink runs 5mm past the real edge of the blank.
+    bleedMm: 5.0,
     safeTopMm: 3.0,    // Cupco: "print up to 3mm of the top edge".
     safeBottomMm: 2.0, // Cupco: "can print to 2mm from the bottom".
     safeSeamMm: 4.0,   // Cupco: "print up to 4mm clear on the seam edge".
@@ -126,6 +129,7 @@ export const CUP_12OZ: CupProfile = {
   rimBase: { rimCurlAllowanceMm: 6.0, baseAllowanceMm: 5.0 },
   margins: {
     cut: { topMm: 3.0, bottomMm: 3.0, leftMm: 3.0, rightMm: 3.0 },
+    bleedMm: 3.0,
     safeTopMm: 6.0, safeBottomMm: 6.0, safeSeamMm: 5.0,
   },
   seam: { positionRad: Math.PI, overlapMm: 5.0, visibleStartOffsetMm: 5.0 },
@@ -152,6 +156,7 @@ export const CUP_16OZ: CupProfile = {
   rimBase: { rimCurlAllowanceMm: 6.0, baseAllowanceMm: 5.0 },
   margins: {
     cut: { topMm: 3.0, bottomMm: 3.0, leftMm: 3.0, rightMm: 3.0 },
+    bleedMm: 3.0,
     safeTopMm: 6.0, safeBottomMm: 6.0, safeSeamMm: 5.0,
   },
   seam: { positionRad: Math.PI, overlapMm: 5.0, visibleStartOffsetMm: 5.0 },

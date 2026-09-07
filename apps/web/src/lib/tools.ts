@@ -52,14 +52,14 @@ export function sampleColor(
 /* Fill to template                                                            */
 /* -------------------------------------------------------------------------- */
 
-export type FillMode = 'cut' | 'safe';
+export type FillMode = 'bleed' | 'safe';
 
 /**
  * Scale and centre an element so it fills the printable template.
  *
  * Two sensible targets:
- *   'cut'   — cover the whole blank out to the cut line, so the artwork runs
- *             off every edge with nothing left unprinted. Overshoots
+ *   'bleed' — cover the whole blank and the bleed beyond it, so the artwork
+ *             runs off every edge with nothing left unprinted. Overshoots
  *             deliberately.
  *   'safe'  — fit entirely inside the safe area, so nothing is cropped by the
  *             rim curl, the base, or the glue seam.
@@ -80,15 +80,16 @@ export function fillToTemplate(
   // Target extents in design space.
   let uSpan: number, vSpan: number, vCentre: number;
 
-  if (mode === 'cut') {
-    // The cut line is a physical margin, and asymmetric, so convert each edge
-    // through the derived geometry rather than guessing a fraction of the
-    // canvas. The centre shifts with it: the blank is not centred on the cup.
+  if (mode === 'bleed') {
+    // Asymmetric, so convert each edge through the derived geometry rather
+    // than guessing a fraction of the canvas. The centre shifts with it: the
+    // blank is not centred on the cup.
     const c = profile.margins.cut;
-    const leftU = c.leftMm / geom.topArcMm;
-    const rightU = c.rightMm / geom.topArcMm;
-    const topV = c.topMm / geom.slantMm;
-    const botV = c.bottomMm / geom.slantMm;
+    const b = profile.margins.bleedMm;
+    const leftU = (c.leftMm + b) / geom.topArcMm;
+    const rightU = (c.rightMm + b) / geom.topArcMm;
+    const topV = (c.topMm + b) / geom.slantMm;
+    const botV = (c.bottomMm + b) / geom.slantMm;
     uSpan = 1 + leftU + rightU;
     vSpan = 1 + topV + botV;
     // v points UP, so the bottom cut extends below v=0.
@@ -108,9 +109,9 @@ export function fillToTemplate(
   const curV = cur.dv * 2;
   if (curU <= 0 || curV <= 0) return {};
 
-  // 'cut' covers (scale by the LARGER ratio, overflow is intended);
+  // 'bleed' covers (scale by the LARGER ratio, overflow is intended);
   // 'safe' contains (scale by the SMALLER ratio, nothing is cropped).
-  const ratio = mode === 'cut'
+  const ratio = mode === 'bleed'
     ? Math.max(uSpan / curU, vSpan / curV)
     : Math.min(uSpan / curU, vSpan / curV);
 

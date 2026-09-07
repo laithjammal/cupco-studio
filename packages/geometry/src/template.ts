@@ -38,14 +38,19 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
   const { topMm: cutT, bottomMm: cutB, leftMm: cutL, rightMm: cutR } = profile.margins.cut;
   const cutW = W + cutL + cutR;
   const cutH = H + cutT + cutB;
+  // Bleed runs OUTSIDE the cut: the blank is cut at the cut line, so that is
+  // the edge a white sliver appears at.
+  const bl = profile.margins.bleedMm;
+  const bleedW = cutW + bl * 2;
+  const bleedH = cutH + bl * 2;
 
   const pad = 18;
-  const totalW = cutW + pad * 2;
+  const totalW = bleedW + pad * 2;
   // Extra height below the artwork for the legend panel.
-  const legendH = 70;
-  const totalH = cutH + pad * 2 + legendH;
-  const ox = pad + cutL;
-  const oy = pad + cutT;
+  const legendH = 78;
+  const totalH = bleedH + pad * 2 + legendH;
+  const ox = pad + bl + cutL;
+  const oy = pad + bl + cutT;
 
   const label = (x: number, y: number, text: string, anchor = 'start', size = 3, fill = '#64748b') =>
     `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-family="monospace" font-size="${size}" fill="${fill}" text-anchor="${anchor}">${text}</text>`;
@@ -56,9 +61,12 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
   ): string => {
     const rows: [string, string, string, string][] = [
       // swatch style, name, measurement, what it means
-      ['stroke="#db2777" stroke-width="0.7" stroke-dasharray="2.2 1.2"',
+      ['stroke="#f472b6" stroke-width="0.7" stroke-dasharray="2.2 1.2"',
+        'BLEED', `${bl}mm outside the cut`,
+        'Artwork meant to reach an edge must run all the way out to here. Cutting is never exact; stopping at the cut line leaves a white sliver.'],
+      ['stroke="#db2777" stroke-width="0.9"',
         'CUT', `${cutT}mm top / ${cutB}mm base / ${cutL}mm left / ${cutR}mm right`,
-        'Where the blank is die-cut. Artwork meant to reach an edge must run all the way to this line — cutting is never exact, and stopping at trim leaves a white sliver.'],
+        'The real blank. This is where the die falls — the actual size and shape of the flat fan before it is formed.'],
       ['stroke="#0f172a" stroke-width="0.9"',
         'TRIM', `${W.toFixed(1)} x ${H.toFixed(1)}mm`,
         'The finished cup wall: what is still showing once the cup is formed. The blank itself is bigger — see CUT.'],
@@ -104,11 +112,12 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
        Artwork area (trim) : ${W.toFixed(2)} x ${H.toFixed(2)} mm
        Blank (to the cut)  : ${cutW.toFixed(2)} x ${cutH.toFixed(2)} mm
        Cut line            : ${cutT}mm top, ${cutB}mm base, ${cutL}mm left, ${cutR}mm right
+       With bleed          : ${bleedW.toFixed(2)} x ${bleedH.toFixed(2)} mm (${bl}mm outside the cut)
        Safe area           : ${safeT}mm top, ${safeB}mm bottom, ${safeS}mm from each seam edge
 
      HOW TO USE
-       1. Place artwork inside the CUT rectangle. Anything meant to reach the
-          edge must extend to the cut line, not stop at trim.
+       1. Anything meant to reach an edge must extend to the BLEED rectangle,
+          the outermost one. The blank is cut at the CUT line inside it.
        2. Keep logos and text inside the SAFE rectangle.
        3. The LEFT and RIGHT edges are the same place on the cup - the glue
           seam. Artwork must line up across them.
@@ -133,15 +142,18 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
      viewBox="0 0 ${totalW.toFixed(4)} ${totalH.toFixed(4)}">
 
   <g id="ARTWORK">
-    <!-- Put artwork in this layer. Fill the cut rectangle below. -->
-    <rect x="${(ox - cutL).toFixed(3)}" y="${(oy - cutT).toFixed(3)}"
-          width="${cutW.toFixed(3)}" height="${cutH.toFixed(3)}" fill="#ffffff"/>
+    <!-- Put artwork in this layer. Fill the bleed rectangle below. -->
+    <rect x="${(ox - cutL - bl).toFixed(3)}" y="${(oy - cutT - bl).toFixed(3)}"
+          width="${bleedW.toFixed(3)}" height="${bleedH.toFixed(3)}" fill="#ffffff"/>
   </g>
 
   <g id="GUIDES" fill="none">
+    <rect x="${(ox - cutL - bl).toFixed(3)}" y="${(oy - cutT - bl).toFixed(3)}"
+          width="${bleedW.toFixed(3)}" height="${bleedH.toFixed(3)}"
+          stroke="#f472b6" stroke-width="0.3" stroke-dasharray="3 1.5"/>
     <rect x="${(ox - cutL).toFixed(3)}" y="${(oy - cutT).toFixed(3)}"
           width="${cutW.toFixed(3)}" height="${cutH.toFixed(3)}"
-          stroke="#db2777" stroke-width="0.3" stroke-dasharray="3 1.5"/>
+          stroke="#db2777" stroke-width="0.45"/>
     <rect x="${ox.toFixed(3)}" y="${oy.toFixed(3)}"
           width="${W.toFixed(3)}" height="${H.toFixed(3)}"
           stroke="#0f172a" stroke-width="0.45"/>
@@ -154,16 +166,16 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
           x2="${(ox + W / 2).toFixed(3)}" y2="${(oy + H).toFixed(3)}"
           stroke="#94a3b8" stroke-width="0.2" stroke-dasharray="2 2"/>
 
-    ${label(ox, oy - cutT - 4.5, `${profile.displayName}  -  artwork template  -  1:1 mm`, 'start', 4, '#0f172a')}
-    ${label(ox, oy - cutT - 1.2, `trim ${W.toFixed(2)} x ${H.toFixed(2)}mm   |   blank to the cut ${cutW.toFixed(2)} x ${cutH.toFixed(2)}mm`)}
-    ${label(ox + W / 2, oy + H + cutB + 4.5, 'CENTRE  (faces the customer)', 'middle')}
-    ${label(ox + 1, oy + H + cutB + 4.5, 'SEAM', 'start', 3, '#16a34a')}
-    ${label(ox + W - 1, oy + H + cutB + 4.5, 'SEAM', 'end', 3, '#16a34a')}
+    ${label(ox, oy - cutT - bl - 4.5, `${profile.displayName}  -  artwork template  -  1:1 mm`, 'start', 4, '#0f172a')}
+    ${label(ox, oy - cutT - bl - 1.2, `trim ${W.toFixed(2)} x ${H.toFixed(2)}mm   |   blank ${cutW.toFixed(2)} x ${cutH.toFixed(2)}mm   |   with bleed ${bleedW.toFixed(2)} x ${bleedH.toFixed(2)}mm`)}
+    ${label(ox + W / 2, oy + H + cutB + bl + 4.5, 'CENTRE  (faces the customer)', 'middle')}
+    ${label(ox + 1, oy + H + cutB + bl + 4.5, 'SEAM', 'start', 3, '#16a34a')}
+    ${label(ox + W - 1, oy + H + cutB + bl + 4.5, 'SEAM', 'end', 3, '#16a34a')}
   </g>
 
   <g id="LEGEND">
     <!-- Delete this layer along with GUIDES before exporting artwork. -->
-    ${legendPanel(ox, oy + H + cutB + 10, W, profile, safeT, safeB, safeS, bottomRatio)}
+    ${legendPanel(ox, oy + H + cutB + bl + 10, W, profile, safeT, safeB, safeS, bottomRatio)}
   </g>
 </svg>`;
 }

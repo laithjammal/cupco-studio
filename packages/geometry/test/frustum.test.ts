@@ -190,6 +190,7 @@ describe('split provenance: dimensions vs margins', () => {
 describe('confirmed 8oz margin values', () => {
   it('matches what Cupco supplied 2026-08-26', () => {
     expect(CUP_8OZ.margins.cut).toEqual({ topMm: 9.0, bottomMm: 7.0, leftMm: 9.0, rightMm: 3.0 });
+    expect(CUP_8OZ.margins.bleedMm).toBe(5.0);
     expect(CUP_8OZ.seam.overlapMm).toBe(6.0);
     expect(CUP_8OZ.margins.safeSeamMm).toBe(4.0);
     expect(CUP_8OZ.rimBase.rimCurlAllowanceMm).toBe(7.0);
