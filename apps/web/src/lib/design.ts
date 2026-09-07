@@ -400,6 +400,19 @@ export function hitTest(
  */
 export interface RenderOptions {
   /**
+   * The design-space v range this canvas covers, bottom and top.
+   *
+   * Default 0..1, i.e. exactly the cup wall. Widen it and the canvas gains
+   * overscan above the rim and below the base, so artwork pushed out towards
+   * the die is actually drawn rather than falling off the canvas.
+   *
+   * Pixels-per-v is held constant (height / span), so nothing changes size:
+   * a wider range means a taller canvas showing more, not the same design
+   * squashed. Pass `@cupco/geometry`'s boundaryVRange to fill a given
+   * boundary.
+   */
+  vRange?: { bottom: number; top: number };
+  /**
    * Show colours as they will print in CMYK ink.
    *
    * CMYK has a smaller gamut than a screen, so saturated colours genuinely
@@ -442,6 +455,15 @@ export function renderDesign(
 ): void {
   const paint = (hex: string) => (options.proofCmyk ? proofColor(hex) : hex);
 
+  // Vertical mapping. `height` is the canvas; `pxPerV` is what a unit of
+  // design v is worth in it. They are the same thing only when the canvas
+  // covers exactly v=0..1, which is why every vertical measurement below goes
+  // through pxPerV rather than height.
+  const vTop = options.vRange?.top ?? 1;
+  const vBottom = options.vRange?.bottom ?? 0;
+  const pxPerV = height / (vTop - vBottom);
+  const yOf = (v: number) => (vTop - v) * pxPerV;
+
   ctx.clearRect(0, 0, width, height);
   if (!options.transparentBackground) {
     ctx.fillStyle = paint(design.background);
@@ -452,11 +474,11 @@ export function renderDesign(
     for (const dx of [-width, 0, width]) {
       ctx.save();
       ctx.globalAlpha = el.opacity ?? 1;
-      ctx.translate(el.u * width + dx, (1 - el.v) * height);
+      ctx.translate(el.u * width + dx, yOf(el.v));
       ctx.rotate((el.rotation * Math.PI) / 180);
 
       if (el.type === 'band') {
-        const bh = el.heightV * height;
+        const bh = el.heightV * pxPerV;
         ctx.fillStyle = paint(el.color);
         // Drawn at triple width so the three seam passes cannot leave a gap.
         ctx.fillRect(-width, -bh / 2, width * 3, bh);
@@ -505,7 +527,7 @@ export function renderDesign(
           ctx.fill('evenodd');
         }
       } else if (el.content.trim() !== '') {
-        const sizePx = Math.max(4, el.sizeV * height);
+        const sizePx = Math.max(4, el.sizeV * pxPerV);
         ctx.fillStyle = paint(el.color);
         ctx.font = fontFor(el, sizePx);
         drawTextGlyphs(ctx, el, sizePx);

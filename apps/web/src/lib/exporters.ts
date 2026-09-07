@@ -34,10 +34,19 @@ export interface RasterResult {
  * 600dpi on an 8oz fan is ~15 megapixels; doing that synchronously would lock
  * the tab for several seconds, so it always goes through the worker.
  */
+/**
+ * How much design space an artwork canvas covers vertically.
+ *
+ * The production fan is bigger than the cup at both ends, so its canvas is
+ * rendered with overscan - see boundaryVRange in @cupco/geometry.
+ */
+export interface DesignVRange { vBottom: number; vTop: number }
+
 export async function rasteriseFanOffThread(
   profile: CupProfile,
   designCanvas: HTMLCanvasElement,
   dpi: number,
+  vRange?: DesignVRange,
   onProgress?: (msg: string) => void,
 ): Promise<RasterResult> {
   const dctx = designCanvas.getContext('2d', { willReadFrequently: true });
@@ -59,6 +68,7 @@ export async function rasteriseFanOffThread(
       const req: ExportRequest = {
         profile, width: src.width, height: src.height,
         buffer: copy, dpi, supersample: 2,
+        designVBottom: vRange?.vBottom, designVTop: vRange?.vTop,
       };
       worker.postMessage(req, [copy]);
     });
@@ -117,9 +127,10 @@ export async function exportFanPdf(
   geom: FrustumGeometry,
   designCanvas: HTMLCanvasElement,
   dpi: number,
+  vRange?: DesignVRange,
   onProgress?: (msg: string) => void,
 ): Promise<{ blob: Blob; widthPx: number; heightPx: number; dpi: number; ms: number }> {
-  const r = await rasteriseFanOffThread(profile, designCanvas, dpi, onProgress);
+  const r = await rasteriseFanOffThread(profile, designCanvas, dpi, vRange, onProgress);
 
   onProgress?.('Building PDF…');
   const pdf = await PDFDocument.create();
@@ -167,9 +178,10 @@ export async function exportFanSvg(
   geom: FrustumGeometry,
   designCanvas: HTMLCanvasElement,
   dpi: number,
+  vRange?: DesignVRange,
   onProgress?: (msg: string) => void,
 ): Promise<{ blob: Blob; widthPx: number; heightPx: number; ms: number }> {
-  const r = await rasteriseFanOffThread(profile, designCanvas, dpi, onProgress);
+  const r = await rasteriseFanOffThread(profile, designCanvas, dpi, vRange, onProgress);
   onProgress?.('Building SVG…');
 
   const t = r.transform;

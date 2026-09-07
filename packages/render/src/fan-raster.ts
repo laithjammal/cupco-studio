@@ -45,6 +45,17 @@ export interface FanRasterOptions {
    */
   supersample?: number;
   /**
+   * The design-space v values the artwork image's BOTTOM and TOP rows carry.
+   * Default 0 and 1, i.e. the image covers exactly the trim band.
+   *
+   * Give it a wider range and artwork placed past the cup's wall - out towards
+   * the cut and the bleed - actually renders, instead of the trim edge being
+   * smeared outward. Sampling clamps at the image edge either way; the
+   * question is only how much design the image was given in the first place.
+   */
+  designVBottom?: number;
+  designVTop?: number;
+  /**
    * Blank margin around the fan bounds, mm. Default 3.
    *
    * Without this the sector is tangent to all four canvas edges, so the
@@ -97,6 +108,12 @@ export function rasteriseFan(
   const wrapU = options.wrapU ?? true;
   const ss = Math.max(1, Math.floor(options.supersample ?? 1));
   const bg = options.background ?? ([0, 0, 0, 0] as const);
+
+  // How much design space the supplied artwork image spans vertically.
+  const designVBottom = options.designVBottom ?? 0;
+  const designVTop = options.designVTop ?? 1;
+  const designVSpan = designVTop - designVBottom;
+  if (!(designVSpan > 0)) throw new Error(`bad design v range ${designVBottom}..${designVTop}`);
 
   if (!Number.isFinite(dpi) || dpi <= 0) throw new Error(`bad dpi ${dpi}`);
 
@@ -165,7 +182,9 @@ export function rasteriseFan(
           if (!insideLeft(mmX, mmY) || !insideRight(mmX, mmY)) continue;
 
           const uv = fanToDesign({ x: mmX, y: mmY }, geom);
-          sampleBilinear(design, uv.u, uv.v, wrapU, sample);
+          // Design v -> image v. Identity when the image covers 0..1.
+          const iv = (uv.v - designVBottom) / designVSpan;
+          sampleBilinear(design, uv.u, iv, wrapU, sample);
           acc[0]! += sample[0]!;
           acc[1]! += sample[1]!;
           acc[2]! += sample[2]!;

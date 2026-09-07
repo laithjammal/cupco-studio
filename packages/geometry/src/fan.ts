@@ -179,6 +179,29 @@ export function buildFanOutline(
   };
 }
 
+/**
+ * How much DESIGN SPACE a boundary covers vertically.
+ *
+ * Design space v runs 0 at the cup's base to 1 at its rim - v=0..1 IS the trim
+ * band. Every other boundary lies partly outside it: the cut and bleed run
+ * past the cup at both ends, so they need v below 0 and above 1.
+ *
+ * This is what an artwork raster has to span for elements placed out towards
+ * the die to survive. Rendered only over 0..1, they are simply not on the
+ * canvas, and the warp has nothing to read but the edge row.
+ */
+export function boundaryVRange(
+  profile: CupProfile,
+  geom: FrustumGeometry,
+  boundary: FanBoundary,
+): { vBottom: number; vTop: number } {
+  const o = buildFanOutline(profile, geom, boundary, 8);
+  return {
+    vBottom: (o.rhoInnerMm - geom.rBottomMm) / geom.slantMm,
+    vTop: (o.rhoOuterMm - geom.rBottomMm) / geom.slantMm,
+  };
+}
+
 /** Axis-aligned bounds of a set of fan-space points. */
 export function fanBounds(points: readonly Point2[]): FanBounds {
   if (points.length === 0) throw new Error('fanBounds: no points');

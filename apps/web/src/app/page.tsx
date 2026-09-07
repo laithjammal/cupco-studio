@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
-  deriveFrustum, getProfile, BUILT_IN_PROFILES,
+  deriveFrustum, getProfile, BUILT_IN_PROFILES, boundaryVRange,
 } from '@cupco/geometry';
 import {
   renderDesignToCanvas, EMPTY_DESIGN, createImageElement, createTextElement,
@@ -97,6 +97,7 @@ export default function Page() {
   const [videoPreset, setVideoPreset] = useState<VideoPresetId>('standard');
 
   const designCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fanCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   /** Off-screen context used only to measure text, matching the editor's own. */
   const measureRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -162,13 +163,32 @@ export default function Page() {
     onNotice: setStatus,
   });
 
+  /**
+   * How much design space the FAN canvas covers.
+   *
+   * The cup wall is v=0..1, and that is all the 3D preview, the mockups and
+   * the thumbnails ever want. The production fan is bigger than the cup at
+   * both ends, so anything rendered only over 0..1 has nothing to show out
+   * there and the warp falls back to smearing the edge row. Rendering the fan
+   * from its own, taller canvas is what lets artwork pushed towards the die
+   * actually print.
+   */
+  const fanVRange = useMemo(() => boundaryVRange(profile, geom, 'bleed'), [profile, geom]);
+
   useEffect(() => {
     const { widthPx, heightPx } = profile.designCanvas;
     designCanvasRef.current = renderDesignToCanvas(
       design, widthPx, heightPx, designCanvasRef.current ?? undefined, { proofCmyk },
     );
+    // Same pixels per unit v, more of them - so the design is not squashed,
+    // the canvas simply shows more than the cup.
+    const span = fanVRange.vTop - fanVRange.vBottom;
+    fanCanvasRef.current = renderDesignToCanvas(
+      design, widthPx, Math.round(heightPx * span), fanCanvasRef.current ?? undefined,
+      { proofCmyk, vRange: { bottom: fanVRange.vBottom, top: fanVRange.vTop } },
+    );
     setRevision((r) => r + 1);
-  }, [design, profile, proofCmyk, fontsReady]);
+  }, [design, profile, proofCmyk, fontsReady, fanVRange]);
 
   /* ---- element operations ------------------------------------------------ */
 
@@ -490,7 +510,8 @@ export default function Page() {
   };
 
   const runExport = useCallback(async (kind: 'pdf' | 'svg') => {
-    const canvas = designCanvasRef.current;
+    // The FAN canvas: it carries the overscan the die needs.
+    const canvas = fanCanvasRef.current;
     if (!canvas) return;
     setBusy(true);
     try {
@@ -514,7 +535,7 @@ export default function Page() {
       // Something in the design cannot be vector — say which, then rasterise.
       const why = vectorCheck.blockers.map((b) => b.name).join(', ');
       const fn = kind === 'pdf' ? exportFanPdf : exportFanSvg;
-      const r = await fn(profile, geom, canvas, exportDpi, setStatus);
+      const r = await fn(profile, geom, canvas, exportDpi, fanVRange, setStatus);
       download(r.blob, `cupco-${profile.sizeOz}oz-fan-${exportDpi}dpi.${kind}`);
       setStatus(
         `Exported RGB raster ${kind.toUpperCase()} @ ${exportDpi}dpi (${r.widthPx}×${r.heightPx}px) — ` +
@@ -887,7 +908,7 @@ export default function Page() {
           )}
           {tab === 'fan' && (
             <FanView profile={profile} geom={geom} design={design}
-              designCanvas={designCanvasRef.current} revision={revision}
+              designCanvas={fanCanvasRef.current} vRange={fanVRange} revision={revision}
               showGuides={showGuides} selectedId={selectedId}
               onSelect={setSelectedId} onChange={patchElement}
               onBeginEdit={beginEdit}

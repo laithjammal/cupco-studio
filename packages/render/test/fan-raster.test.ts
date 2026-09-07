@@ -158,3 +158,86 @@ describe('input validation', () => {
     expect(() => rasteriseFan(createSolid(4, 4, [0, 0, 0, 255]), CUP_8OZ, g8, { dpi: 0 })).toThrow();
   });
 });
+
+/**
+ * Artwork placed OUTSIDE the cup's wall.
+ *
+ * The production fan is bigger than the cup at both ends. Design space v=0..1
+ * is the trim band, so a raster covering only that has nothing to show out
+ * towards the die, and sampling falls back to the image's edge row - a smear.
+ * Rendering the artwork over a wider v range and declaring it here is what
+ * makes an element dragged past the rim actually print.
+ */
+describe('rasteriseFan — artwork beyond the cup wall', () => {
+  // A three-band image: red above the rim, white across the wall, blue below
+  // the base. Spans v = -0.25 .. 1.25, so the bands sit entirely in overscan.
+  const V_BOTTOM = -0.25, V_TOP = 1.25;
+  function banded(): RasterImage {
+    const w = 64, h = 300;
+    const img = createImage(w, h);
+    for (let y = 0; y < h; y++) {
+      // Row 0 is v = V_TOP.
+      const v = V_TOP - ((y + 0.5) / h) * (V_TOP - V_BOTTOM);
+      const c = v > 1 ? [255, 0, 0] : v < 0 ? [0, 0, 255] : [255, 255, 255];
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        img.data[i] = c[0]!; img.data[i + 1] = c[1]!; img.data[i + 2] = c[2]!;
+        img.data[i + 3] = 255;
+      }
+    }
+    return img;
+  }
+
+  /** Colour the fan shows at a given design (u, v). */
+  const at = (r: ReturnType<typeof rasteriseFan>, u: number, v: number) => {
+    const f = designToFan({ u, v }, g8);
+    const p = fanMmToPixel(f.x, f.y, r.transform);
+    return pixelAt(r.image, p.x, p.y);
+  };
+
+  it('shows artwork from above the rim, rather than smearing the top row', () => {
+    const r = rasteriseFan(banded(), CUP_8OZ, g8, {
+      dpi: 200, designVBottom: V_BOTTOM, designVTop: V_TOP,
+    });
+    // Between the rim and the die: red, because that is what was drawn there.
+    const [red, , blue] = at(r, 0.5, 1.06);
+    expect(red).toBeGreaterThan(200);
+    expect(blue).toBeLessThan(60);
+    // On the wall it is still white.
+    expect(at(r, 0.5, 0.5)[2]).toBeGreaterThan(200);
+  });
+
+  it('shows artwork from below the base', () => {
+    const r = rasteriseFan(banded(), CUP_8OZ, g8, {
+      dpi: 200, designVBottom: V_BOTTOM, designVTop: V_TOP,
+    });
+    const [red, , blue] = at(r, 0.5, -0.08);
+    expect(blue).toBeGreaterThan(200);
+    expect(red).toBeLessThan(60);
+  });
+
+  /**
+   * The bug this fixes, kept as a control: given the SAME image but no range,
+   * the rasteriser reads it as covering the wall alone. The red band is then
+   * mistaken for artwork ON the cup, and the area past the rim gets the
+   * smeared edge row instead.
+   */
+  it('without the range, the same image is read as covering the wall alone', () => {
+    const r = rasteriseFan(banded(), CUP_8OZ, g8, { dpi: 200 });
+    // Red has been dragged down onto the cup wall, where it does not belong.
+    expect(at(r, 0.5, 0.95)[0]).toBeGreaterThan(200);
+    expect(at(r, 0.5, 0.95)[2]).toBeLessThan(60);
+  });
+
+  it('defaults to the trim band, so existing callers are unaffected', () => {
+    const img = banded();
+    const a = rasteriseFan(img, CUP_8OZ, g8, { dpi: 120 });
+    const b = rasteriseFan(img, CUP_8OZ, g8, { dpi: 120, designVBottom: 0, designVTop: 1 });
+    expect(Array.from(a.image.data)).toEqual(Array.from(b.image.data));
+  });
+
+  it('refuses a degenerate range rather than dividing by zero', () => {
+    expect(() => rasteriseFan(banded(), CUP_8OZ, g8, { designVBottom: 1, designVTop: 1 }))
+      .toThrow(/design v range/);
+  });
+});

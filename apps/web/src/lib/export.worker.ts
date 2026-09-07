@@ -20,6 +20,12 @@ export interface ExportRequest {
   buffer: ArrayBuffer;
   dpi: number;
   supersample: number;
+  /**
+   * Design-space v the artwork buffer's bottom and top rows carry.
+   * Omitted means 0..1 - the buffer covers exactly the cup wall.
+   */
+  designVBottom?: number;
+  designVTop?: number;
 }
 
 export interface ExportResponse {
@@ -39,14 +45,15 @@ export interface ExportError {
 self.onmessage = (e: MessageEvent<ExportRequest>) => {
   const t0 = performance.now();
   try {
-    const { profile, width, height, buffer, dpi, supersample } = e.data;
+    const { profile, width, height, buffer, dpi, supersample,
+            designVBottom, designVTop } = e.data;
     const geom = deriveFrustum(profile.dimensions);
 
     const { image, transform } = rasteriseFan(
       { width, height, data: new Uint8ClampedArray(buffer) },
       profile,
       geom,
-      { dpi, boundary: 'bleed', supersample },
+      { dpi, boundary: 'bleed', supersample, designVBottom, designVTop },
     );
 
     const res: ExportResponse = {

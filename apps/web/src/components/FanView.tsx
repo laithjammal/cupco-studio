@@ -26,6 +26,8 @@ export interface FanViewProps {
   geom: FrustumGeometry;
   design: Design;
   designCanvas: HTMLCanvasElement | null;
+  /** Design-space v the canvas covers. Must match how it was rendered. */
+  vRange: { vBottom: number; vTop: number };
   revision: number;
   showGuides: boolean;
   selectedId: ElementId | null;
@@ -57,7 +59,7 @@ const GUIDE_STYLE: Record<FanBoundary, { stroke: string; dash: number[]; label: 
 const DRAG_DPI = 40;
 
 export default function FanView({
-  profile, geom, design, designCanvas, revision, showGuides,
+  profile, geom, design, designCanvas, vRange, revision, showGuides,
   selectedId, onSelect, onChange, onBeginEdit, eyedropActive, onEyedrop, previewDpi = 96,
 }: FanViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -119,7 +121,13 @@ export default function FanView({
     const { image, transform: tf } = rasteriseFan(
       { width: src.width, height: src.height, data: src.data },
       profile, geom,
-      { dpi: fast ? DRAG_DPI : previewDpi, boundary: 'bleed', supersample: fast ? 1 : 2 },
+      {
+        dpi: fast ? DRAG_DPI : previewDpi, boundary: 'bleed',
+        supersample: fast ? 1 : 2,
+        // Same overscan the export uses. If these two disagreed, the
+        // preview would stop being what gets printed.
+        designVBottom: vRange.vBottom, designVTop: vRange.vTop,
+      },
     );
 
     // Assigning canvas.width CLEARS the canvas even when the value is
@@ -135,7 +143,7 @@ export default function FanView({
       setDisplaySize({ w: image.width, h: image.height });
       setMs(Math.round(performance.now() - t0));
     }
-  }, [designCanvas, profile, geom, previewDpi]);
+  }, [designCanvas, profile, geom, previewDpi, vRange]);
 
   // Re-warp on any design change. Cheap mode while the pointer is down.
   useEffect(() => {
