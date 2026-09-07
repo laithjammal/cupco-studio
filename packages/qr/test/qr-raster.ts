@@ -16,6 +16,19 @@
 export interface Pt { x: number; y: number }
 
 /**
+ * The dark module subpaths of a QR artwork.
+ *
+ * The artwork now carries its frame: the light plate is shape 0 and any dark
+ * decoration follows it, with the modules LAST. Tests about the code's own
+ * structure want that last shape, not whatever happens to be first.
+ */
+export function modulesOf(
+  art: { shapes: readonly { subpaths: readonly (readonly Pt[])[] }[] },
+): readonly (readonly Pt[])[] {
+  return art.shapes[art.shapes.length - 1]!.subpaths;
+}
+
+/**
  * Fill polygons into an RGBA buffer, black on white.
  *
  * Samples at pixel centres and counts signed edge crossings to the left,
@@ -23,6 +36,39 @@ export interface Pt { x: number; y: number }
  */
 export function rasterise(subpaths: readonly (readonly Pt[])[], size: number): Uint8ClampedArray {
   const data = new Uint8ClampedArray(size * size * 4).fill(255);
+  fillInto(data, size, subpaths, [0, 0, 0]);
+  return data;
+}
+
+/**
+ * Render a whole QR artwork - frame plate, decoration and modules - with each
+ * shape's own colour, over a chosen ground.
+ *
+ * The ground matters. A framed code is only safe because its plate carries the
+ * quiet zone; rendering it on a DARK ground is what proves that, since any part
+ * of the quiet zone falling outside the plate shows up as dark right against
+ * the code and the decoders stop reading it.
+ */
+export function rasteriseArtwork(
+  art: { shapes: readonly { subpaths: readonly (readonly Pt[])[]; fill: readonly number[] }[] },
+  size: number,
+  ground: readonly number[] = [255, 255, 255],
+): Uint8ClampedArray {
+  const data = new Uint8ClampedArray(size * size * 4);
+  for (let i = 0; i < size * size; i++) {
+    data[i * 4] = ground[0]!; data[i * 4 + 1] = ground[1]!;
+    data[i * 4 + 2] = ground[2]!; data[i * 4 + 3] = 255;
+  }
+  for (const sh of art.shapes) fillInto(data, size, sh.subpaths, sh.fill);
+  return data;
+}
+
+function fillInto(
+  data: Uint8ClampedArray,
+  size: number,
+  subpaths: readonly (readonly Pt[])[],
+  rgb: readonly number[],
+): void {
 
   // Flatten every edge once, in pixel coordinates.
   const edges: { x0: number; y0: number; x1: number; y1: number }[] = [];
@@ -63,11 +109,10 @@ export function rasterise(subpaths: readonly (readonly Pt[])[], size: number): U
       const xb = Math.ceil(hits[i + 1]!.x - 0.5);
       for (let px = Math.max(0, xa); px < Math.min(size, xb); px++) {
         const o = (py * size + px) * 4;
-        data[o] = 0; data[o + 1] = 0; data[o + 2] = 0;
+        data[o] = rgb[0]!; data[o + 1] = rgb[1]!; data[o + 2] = rgb[2]!;
       }
     }
   }
-  return data;
 }
 
 /**

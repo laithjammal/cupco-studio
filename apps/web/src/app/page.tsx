@@ -15,7 +15,7 @@ import {
 } from '@cupco/geometry';
 import {
   renderDesignToCanvas, EMPTY_DESIGN, createImageElement, createTextElement,
-  createVectorElement, FONT_CHOICES, cssFamily, nextId, withQrUrl, withQrStyle,
+  createVectorElement, FONT_CHOICES, cssFamily, nextId, withQrUrl, withQrStyle, withQrFrame,
   type Design, type DesignElement, type ElementId, type TextElement,
 } from '@/lib/design';
 import { useHistory } from '@/lib/useHistory';
@@ -26,7 +26,7 @@ import ProjectBar from '@/components/ProjectBar';
 import { runPreflight } from '@cupco/preflight';
 import { toPreflightDesign } from '@/lib/preflight-adapter';
 import PreflightPanel from '@/components/PreflightPanel';
-import QrStylePicker from '@/components/QrStylePicker';
+import QrStylePicker, { QrFramePicker } from '@/components/QrStylePicker';
 import MockupGallery from '@/components/MockupGallery';
 import PlateStudio from '@/components/PlateStudio';
 import Section from '@/components/Section';
@@ -48,13 +48,13 @@ import {
   extractPalette, simulateCmykPrint, totalInkPct, printShift, hexToRgb,
   SHAPES, buildShapeArtwork, rgbToHex, type PaletteEntry, type ShapeId,
 } from '@cupco/vector';
-
-/** Colour a new shape arrives in. Neutral, and clearly not final. */
-const SHAPE_DEFAULT_FILL = '#334155';
 import FanView from '@/components/FanView';
 import DesignView from '@/components/DesignView';
 import ConceptGallery from '@/components/ConceptGallery';
 import type { ConceptSource } from '@/lib/concepts-adapter';
+
+/** Colour a new shape arrives in. Neutral, and clearly not final. */
+const SHAPE_DEFAULT_FILL = '#334155';
 
 const CupViewer = dynamic(() => import('@/components/CupViewer'), {
   ssr: false,
@@ -788,14 +788,22 @@ export default function Page() {
                 ? `Scans to ${qrElement.url.startsWith('http') ? qrElement.url : `https://${qrElement.url}`} · ${qrElement.moduleCount}×${qrElement.moduleCount} modules`
                 : 'Type your website and the placeholder becomes a working code.'}
             </div>
+            <QrFramePicker
+              url={qrElement.url}
+              styleId={qrElement.styleId}
+              frameId={qrElement.frameId}
+              onChange={(id) => commitElement(qrElement.id, withQrFrame(qrElement, id))}
+            />
             <QrStylePicker
               url={qrElement.url}
               styleId={qrElement.styleId}
+              frameId={qrElement.frameId}
               onChange={(id) => commitElement(qrElement.id, withQrStyle(qrElement, id))}
             />
             <div className="hint">
-              Style changes the drawing, never the data. Each one is decoded by two
-              independent scanners in the tests, at print size and blurred.
+              Shape and style change the drawing, never the data — the shape is the
+              light ground the code sits on, not a mask over it. Every one is decoded
+              by two independent scanners in the tests, at print size and blurred.
             </div>
           </div>
         )}

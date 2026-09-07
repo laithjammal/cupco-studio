@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { modulesOf } from './qr-raster';
 import { buildQrArtwork, normaliseUrl } from '../src/index';
 
 describe('QR codes', () => {
@@ -23,7 +24,7 @@ describe('QR codes', () => {
 
   it('every module sits inside the unit box, quiet zone included', () => {
     const { art } = buildQrArtwork('https://cupco.com.au');
-    for (const sp of art.shapes[0]!.subpaths) {
+    for (const sp of modulesOf(art)) {
       for (const p of sp) {
         expect(p.x).toBeGreaterThanOrEqual(0);
         expect(p.x).toBeLessThanOrEqual(1);
@@ -35,7 +36,7 @@ describe('QR codes', () => {
 
   it('leaves a quiet zone — scanners fail without one', () => {
     const { art, moduleCount } = buildQrArtwork('https://cupco.com.au');
-    const all = art.shapes[0]!.subpaths.flat();
+    const all = modulesOf(art).flat();
     const minX = Math.min(...all.map((p) => p.x));
     const expected = 4 / (moduleCount + 8); // 4 modules of margin
     expect(minX).toBeGreaterThanOrEqual(expected - 1e-9);

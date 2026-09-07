@@ -1,13 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import { buildQrArtwork, QR_STYLES, getQrStyle, normaliseUrl } from '../src/index';
-import type { QrStyle } from '../src/index';
-import { rasterise, blur } from './qr-raster';
+import type { QrStyle, QrFrameId } from '../src/index';
+import { QR_FRAMES, buildFrame } from '../src/index';
+import { rasterise, rasteriseArtwork, blur, modulesOf } from './qr-raster';
 import { decodeWithJsQr as jsQRdecode, decodeWithZxing, shrinkEach } from './qr-decoders';
 
-/** Pixels for a code, rendered the way it would print. */
-function render(text: string, style: Partial<QrStyle>, size = 300, blurPx = 0) {
-  const { art } = buildQrArtwork(text, { style });
-  return blur(rasterise(art.shapes[0]!.subpaths, size), size, blurPx);
+/**
+ * Pixels for a code, rendered the way it would print.
+ *
+ * The WHOLE artwork is rendered - plate, decoration and modules, each in its
+ * own colour - on a DARK ground. The ground is the point: a framed code is
+ * only safe because its plate carries the quiet zone, and any part of that
+ * zone falling outside the plate would show as dark right against the code.
+ */
+function render(
+  text: string, style: Partial<QrStyle>, size = 300, blurPx = 0, frame: QrFrameId = 'none',
+) {
+  const { art } = buildQrArtwork(text, { style, frame });
+  return blur(rasteriseArtwork(art, size, [20, 20, 20]), size, blurPx);
 }
 
 /**
@@ -16,8 +26,10 @@ function render(text: string, style: Partial<QrStyle>, size = 300, blurPx = 0) {
  * A style is only safe if every decoder reads it: the customer has no say in
  * which one is inside the app they happen to open.
  */
-function decodeBoth(text: string, style: Partial<QrStyle>, size = 300, blurPx = 0) {
-  const px = render(text, style, size, blurPx);
+function decodeBoth(
+  text: string, style: Partial<QrStyle>, size = 300, blurPx = 0, frame: QrFrameId = 'none',
+) {
+  const px = render(text, style, size, blurPx, frame);
   return {
     jsQR: jsQRdecode(px, size),
     zxing: decodeWithZxing(px, size),
@@ -62,7 +74,8 @@ describe('the rasteriser used by these tests is trustworthy', () => {
     // The reverse-wound subpath has to actually produce a hole. If it did not,
     // every eye would be a solid 7x7 block and nothing would locate the code.
     const { art } = buildQrArtwork(URL_SHORT, { style: { eye: 'square' } });
-    const px = rasterise(art.shapes[0]!.subpaths, 300);
+    // The modules are the LAST shape; the plate sits behind them.
+    const px = rasterise(art.shapes[art.shapes.length - 1]!.subpaths, 300);
     const total = 300 + 8; // modules including the quiet zone, for a 25-module code
     const { moduleCount } = buildQrArtwork(URL_SHORT);
     const modulePx = 300 / (moduleCount + 8);
@@ -123,7 +136,7 @@ describe('the two decoders are not the same test twice', () => {
     // 1:1:3:1:1 ratio and break finder detection in both decoders - which
     // would make this measure something else entirely.
     const { art } = buildQrArtwork(URL_SHORT, { style: { module: 'dot' } });
-    const all = art.shapes[0]!.subpaths;
+    const all = modulesOf(art);
     const eyes = all.slice(-9);
     expect(eyes).toHaveLength(9);
     const px = rasterise([...shrinkEach(all.slice(0, -9), 0.8), ...eyes], 600);
@@ -171,7 +184,7 @@ describe('structure is preserved across styles', () => {
       const { art, moduleCount } = buildQrArtwork(URL_SHORT, { style: preset });
       const quiet = 4 / (moduleCount + 8);
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      for (const sp of art.shapes[0]!.subpaths) {
+      for (const sp of modulesOf(art)) {
         for (const p of sp) {
           if (p.x < minX) minX = p.x;
           if (p.y < minY) minY = p.y;
@@ -211,5 +224,178 @@ describe('normaliseUrl', () => {
   });
   it('rejects empty input', () => {
     expect(normaliseUrl('   ')).toBeNull();
+  });
+});
+
+/**
+ * FRAMES.
+ *
+ * A frame is a light plate the code sits on, never a mask over it - the finder
+ * patterns live in three corners of the square, so clipping the code to a
+ * shape would remove them and it would stop being locatable at all.
+ *
+ * Which means the whole safety argument rests on ONE property: the plate
+ * contains the code and its full quiet zone. These render on a dark ground so
+ * that property is actually under test - if any of the quiet zone fell outside
+ * the plate, the dark ground would sit right against the code and the decoders
+ * would stop reading it.
+ */
+/**
+ * FRAMES.
+ *
+ * A frame is a light plate the code sits on, never a mask over it - the finder
+ * patterns live in three corners of the square, so clipping the code to a
+ * shape would remove them and it would stop being locatable at all.
+ *
+ * WHY THESE MEASURE A PASS RATE RATHER THAN ASSERTING ONE SIZE
+ *
+ * ZXing fails on particular still renders whenever a code does not exactly
+ * fill the image - deterministically, robust to a pixel shift, to
+ * supersampling, and identical under both of its binarizers. The control below
+ * pins that down: the PLAIN square code, no frame at all, merely scaled to 90%
+ * inside a white canvas, fails at some sizes too.
+ *
+ * So it is a property of ZXing's detector on a code that does not fill the
+ * frame, not of the frames. The old tests never saw it because they only ever
+ * rendered codes that filled the image exactly, which is the one case that is
+ * always clean - and is also the one case that never happens on a cup.
+ *
+ * A live scanner reads a video stream at continuously varying scale, so a
+ * framing that fails is retried a frame later. The honest bar is therefore
+ * "reads at the large majority of framings, and always on jsQR", plus the
+ * requirement that a frame is no worse than a plain code filling the same
+ * fraction of the image.
+ */
+const SWEEP = [300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 900, 1000];
+
+/** Fraction of the sweep each decoder reads. */
+function passRate(frame: QrFrameId, style: Partial<QrStyle> = {}) {
+  let jsqr = 0, zxing = 0;
+  for (const size of SWEEP) {
+    const px = render(URL_SHORT, style, size, 0, frame);
+    if (jsQRdecode(px, size) === URL_SHORT) jsqr++;
+    if (decodeWithZxing(px, size) === URL_SHORT) zxing++;
+  }
+  return { jsQR: jsqr / SWEEP.length, zxing: zxing / SWEEP.length };
+}
+
+describe('every frame decodes, on BOTH decoders', () => {
+  for (const frame of QR_FRAMES) {
+    it(`${frame.name} reads at every framing on jsQR, and most on ZXing`, () => {
+      const r = passRate(frame.id);
+      expect(r.jsQR).toBe(1);
+      expect(r.zxing).toBeGreaterThanOrEqual(0.69);
+    });
+  }
+
+  /**
+   * The control that makes the bar above honest rather than convenient: a
+   * plain UNFRAMED code, scaled to 90% inside a white canvas, shows the same
+   * scattered ZXing misses. If this ever goes clean, the bar above is too soft
+   * and should be tightened.
+   */
+  it('a plain code that does not fill the image misses too — the frames are not the cause', () => {
+    const { art } = buildQrArtwork(URL_SHORT);
+    let misses = 0;
+    for (const size of SWEEP) {
+      const shrunk = {
+        ...art,
+        shapes: art.shapes.map((sh) => ({
+          ...sh,
+          subpaths: sh.subpaths.map((sp) => sp.map((p) => ({ x: 0.05 + p.x * 0.9, y: 0.05 + p.y * 0.9 }))),
+        })),
+      };
+      const px = rasteriseArtwork(shrunk, size, [255, 255, 255]);
+      if (decodeWithZxing(px, size) !== URL_SHORT) misses++;
+      // jsQR is unaffected, which is what says the code itself is fine.
+      expect(jsQRdecode(px, size)).toBe(URL_SHORT);
+    }
+    expect(misses).toBeGreaterThan(0);
+  });
+
+  it('the swirl and the petal style together still read', () => {
+    // The most decorative frame with the most decorated modules - what someone
+    // will actually reach for.
+    const r = passRate('swirl', getQrStyle('petal'));
+    expect(r.jsQR).toBe(1);
+    expect(r.zxing).toBeGreaterThanOrEqual(0.69);
+  });
+
+  it('a framed code survives ink spread', () => {
+    for (const frame of ['circle', 'coffee-cup', 'star'] as const) {
+      const px = render(URL_SHORT, {}, 500, 2, frame);
+      expect(jsQRdecode(px, 500)).toBe(URL_SHORT);
+    }
+  });
+
+  it('a framed code still reads with a long URL, which needs a denser grid', () => {
+    const px = render(URL_LONG, {}, 700, 0, 'coffee-cup');
+    expect(jsQRdecode(px, 700)).toBe(URL_LONG);
+    expect(decodeWithZxing(px, 700)).toBe(URL_LONG);
+  });
+});
+
+describe('frame geometry', () => {
+  /**
+   * The containment property itself, checked directly rather than only through
+   * a decoder: every point of the code-plus-quiet-zone square must fall inside
+   * the plate. A decode test can pass by luck at one size; this cannot.
+   */
+  const inside = (rings: readonly (readonly { x: number; y: number }[])[], p: { x: number; y: number }) => {
+    let c = false;
+    for (const r of rings) {
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+        const a = r[i]!, b = r[j]!;
+        if ((a.y > p.y) !== (b.y > p.y) &&
+            p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) c = !c;
+      }
+    }
+    return c;
+  };
+
+  for (const frame of QR_FRAMES) {
+    it(`${frame.name} contains the code and its whole quiet zone`, () => {
+      const g = buildFrame(frame.id);
+      const eps = 1e-4;
+      for (let i = 0; i <= 60; i++) {
+        for (const [x, y] of [
+          [g.codeX + eps + (i / 60) * (1 - 2 * eps), g.codeY + eps],
+          [g.codeX + eps + (i / 60) * (1 - 2 * eps), g.codeY + 1 - eps],
+          [g.codeX + eps, g.codeY + eps + (i / 60) * (1 - 2 * eps)],
+          [g.codeX + 1 - eps, g.codeY + eps + (i / 60) * (1 - 2 * eps)],
+        ] as const) {
+          expect(inside(g.plate, { x, y })).toBe(true);
+        }
+      }
+    });
+
+    it(`${frame.name} keeps its dark decoration off the code`, () => {
+      const g = buildFrame(frame.id);
+      if (g.accent.length === 0) return;
+      for (let i = 0; i <= 40; i++) {
+        for (let j = 0; j <= 40; j++) {
+          const p = { x: g.codeX + i / 40, y: g.codeY + j / 40 };
+          expect(inside(g.accent, p)).toBe(false);
+        }
+      }
+    });
+  }
+
+  it('reports how much of the artwork the code occupies', () => {
+    // It shrinks as the frame gets more elaborate, and preflight needs to know:
+    // the printable floor is a MODULE size, not an artwork size.
+    const plain = buildQrArtwork(URL_SHORT, { frame: 'none' });
+    const swirl = buildQrArtwork(URL_SHORT, { frame: 'swirl' });
+    expect(plain.codeFraction).toBeCloseTo(1, 9);
+    expect(swirl.codeFraction).toBeLessThan(0.55);
+    expect(swirl.codeFraction).toBeGreaterThan(0.4);
+  });
+
+  it('a frame changes the artwork shape but never the code itself', () => {
+    // Same data, same grid. Only the ground around it differs.
+    const a = buildQrArtwork(URL_SHORT, { frame: 'none' });
+    const b = buildQrArtwork(URL_SHORT, { frame: 'star' });
+    expect(b.moduleCount).toBe(a.moduleCount);
+    expect(modulesOf(b.art).length).toBe(modulesOf(a.art).length);
   });
 });

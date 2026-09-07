@@ -127,6 +127,13 @@ export interface StoredQrElement extends StoredBase {
   widthU: number;
   /** A preset id from QR_STYLES. */
   styleId: string;
+  /**
+   * A preset id from QR_FRAMES: the shape the code sits in.
+   *
+   * Optional, and absent means the plain square - so every design saved before
+   * frames existed loads back exactly as it was, with no migration.
+   */
+  frameId?: string;
 }
 
 /** Text and bands are plain data and are stored verbatim. */

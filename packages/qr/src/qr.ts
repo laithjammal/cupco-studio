@@ -37,6 +37,7 @@
 
 import qrcode from 'qrcode-generator';
 import type { Artwork, RGB } from './artwork';
+import { buildFrame, type QrFrameId } from './frames';
 
 /** How each data module is drawn. */
 export type QrModuleStyle = 'square' | 'dot' | 'rounded' | 'fluid';
@@ -103,6 +104,22 @@ export interface QrOptions {
   quietZone?: number;
   dark?: RGB;
   style?: Partial<QrStyle>;
+  /**
+   * The shape the code sits in. Defaults to 'none' - the plain square ground.
+   *
+   * A frame is the light GROUND, never a mask over the code: the finder
+   * patterns live in three corners of the square, so clipping the code to a
+   * shape removes them and it stops being locatable at all. See frames.ts.
+   */
+  frame?: QrFrameId;
+  /**
+   * The light ground the code is printed on. Defaults to white.
+   *
+   * Emitted as part of the artwork rather than left to each consumer to paint
+   * behind it - there were three copies of that rectangle, and a frame has to
+   * be defined once or they drift.
+   */
+  light?: RGB;
 }
 
 export interface QrResult {
@@ -112,6 +129,16 @@ export interface QrResult {
   /** Number of vector subpaths emitted. */
   pathCount: number;
   style: QrStyle;
+  frame: QrFrameId;
+  /**
+   * Width of the code and its quiet zone as a fraction of the artwork's width.
+   *
+   * 1 for the plain square; about 0.69 in a circle, 0.49 in the swirl. It
+   * matters because the printable floor is a MODULE size: a framed code placed
+   * at the same width has proportionally smaller modules, and preflight has to
+   * know that rather than assuming the code fills its artwork.
+   */
+  codeFraction: number;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -274,10 +301,21 @@ export function buildQrArtwork(text: string, options: QrOptions = {}): QrResult 
 
   const n = qr.getModuleCount();
   const total = n + quiet * 2;
-  const u = 1 / total; // one module, normalised
+
+  // The frame's box becomes the artwork's unit box, and the code+quiet square
+  // is placed inside it. With no frame the two are the same thing.
+  const frameId = options.frame ?? 'none';
+  const f = buildFrame(frameId);
+  const scale = 1 / f.boxW;                 // frame box -> unit width
+  const codeSide = scale;                   // the square is 1 in frame units
+  const u = codeSide / total;               // one module, normalised
+  const originX = f.codeX * scale;
+  const originY = f.codeY * scale;
 
   const subpaths: Pt[][] = [];
   const at = (i: number) => (i + quiet) * u;
+  const atX = (i: number) => originX + at(i);
+  const atY = (i: number) => originY + at(i);
   const isDark = (row: number, col: number) =>
     row >= 0 && row < n && col >= 0 && col < n && qr.isDark(row, col);
 
@@ -293,7 +331,7 @@ export function buildQrArtwork(text: string, options: QrOptions = {}): QrResult 
         const dark_ = col < n && isDark(row, col) && !isFinder(row, col, n);
         if (dark_ && runStart < 0) runStart = col;
         if (!dark_ && runStart >= 0) {
-          subpaths.push(rect(at(runStart), at(row), at(col), at(row + 1)));
+          subpaths.push(rect(atX(runStart), atY(row), atX(col), atY(row + 1)));
           runStart = -1;
         }
       }
@@ -302,7 +340,7 @@ export function buildQrArtwork(text: string, options: QrOptions = {}): QrResult 
     for (let row = 0; row < n; row++) {
       for (let col = 0; col < n; col++) {
         if (!isDark(row, col) || isFinder(row, col, n)) continue;
-        const x0 = at(col), y0 = at(row), x1 = at(col + 1), y1 = at(row + 1);
+        const x0 = atX(col), y0 = atY(row), x1 = atX(col + 1), y1 = atY(row + 1);
 
         if (style.module === 'dot') {
           subpaths.push(circle((x0 + x1) / 2, (y0 + y1) / 2, (u * DOT_DIAMETER) / 2));
@@ -331,14 +369,30 @@ export function buildQrArtwork(text: string, options: QrOptions = {}): QrResult 
   /* ---- finder patterns ------------------------------------------------- */
 
   for (const [r0, c0] of [[0, 0], [0, n - 7], [n - 7, 0]] as const) {
-    subpaths.push(...buildEye(style.eye, at(c0), at(r0), u));
+    subpaths.push(...buildEye(style.eye, atX(c0), atY(r0), u));
   }
 
+  /* ---- the frame ------------------------------------------------------- */
+
+  const light = options.light ?? ([255, 255, 255] as RGB);
+  const toUnit = (rings: { x: number; y: number }[][]) =>
+    rings.map((r) => r.map((p) => ({ x: p.x * scale, y: p.y * scale })));
+
+  // Plate first so it sits BEHIND everything. The accent is dark decoration
+  // and by construction never reaches the quiet zone.
+  const shapes: Artwork['shapes'] = [
+    { subpaths: toUnit(f.plate), fill: light, opacity: 1 },
+  ];
+  if (f.accent.length) shapes.push({ subpaths: toUnit(f.accent), fill: dark, opacity: 1 });
+  shapes.push({ subpaths, fill: dark, opacity: 1 });
+
   return {
-    art: { aspect: 1, shapes: [{ subpaths, fill: dark, opacity: 1 }] },
+    art: { aspect: f.boxH / f.boxW, shapes },
     moduleCount: n,
     pathCount: subpaths.length,
     style,
+    frame: frameId,
+    codeFraction: codeSide,
   };
 }
 

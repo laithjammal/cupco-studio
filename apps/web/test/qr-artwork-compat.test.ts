@@ -41,10 +41,16 @@ describe('the QR package and the vector package agree on artwork', () => {
     expect(us.length).toBeGreaterThan(0);
     expect((Math.min(...us) + Math.max(...us)) / 2).toBeCloseTo(0.5, 4);
 
-    // The DARK modules span the code but not the quiet zone, so the ink is
-    // narrower than the box by exactly the 4 modules of margin on each side.
+    // The artwork now carries its own light ground as the FIRST shape, so the
+    // full box is inked - that is the plate, and it spans the whole width.
+    expect(Math.max(...us) - Math.min(...us)).toBeCloseTo(widthU, 4);
+
+    // The DARK modules are the LAST shape. They span the code but not the
+    // quiet zone, so they are narrower than the box by the 4 modules of margin
+    // on each side.
+    const modules = placed[placed.length - 1]!.subpaths.flat().map((p) => p.u);
     const inked = widthU * (moduleCount / (moduleCount + 8));
-    expect(Math.max(...us) - Math.min(...us)).toBeCloseTo(inked, 4);
+    expect(Math.max(...modules) - Math.min(...modules)).toBeCloseTo(inked, 4);
   });
 
   it('produces every style through the same boundary', () => {

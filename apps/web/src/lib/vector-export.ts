@@ -128,30 +128,15 @@ function buildFanShapes(
         fill: hexToRgbLocal(el.color), opacity: el.opacity ?? 1,
       });
     } else if (el.type === 'qr') {
-      const half = el.widthU / 2;
-      const hV = (el.widthU * cw * el.art.aspect * stretchOf(el)) / ch / 2;
-      // White plate first: the quiet zone and light modules must be white on
-      // press, not "whatever colour the cup happens to be".
-      placed = [{
-        subpaths: [[
-          { u: el.u - half, v: el.v - hV }, { u: el.u + half, v: el.v - hV },
-          { u: el.u + half, v: el.v + hV }, { u: el.u - half, v: el.v + hV },
-          { u: el.u - half, v: el.v - hV },
-        ]],
-        fill: [255, 255, 255],
-        opacity: 1,
-      }];
-      // Then the dark modules on top, positioned within that plate.
-      for (const shape of el.art.shapes) {
-        placed.push({
-          fill: shape.fill,
-          opacity: shape.opacity,
-          subpaths: shape.subpaths.map((sp) => sp.map((pt) => ({
-            u: el.u + (pt.x - 0.5) * el.widthU,
-            v: el.v - (pt.y - 0.5) * el.widthU * cw * el.art.aspect * stretchOf(el) / ch,
-          }))),
-        });
-      }
+      // The light ground is the artwork's FIRST shape, emitted by the QR
+      // builder along with the frame. It used to be a white rectangle added
+      // here, and separately in the preview renderer, and separately again in
+      // the raster path - three copies of one fact, which is one too many for
+      // a frame that is no longer always a rectangle.
+      placed = placeArtwork(el.art, {
+        u: el.u, v: el.v, widthU: el.widthU, rotation: el.rotation,
+        canvasW: cw, canvasH: ch, stretchV: stretchOf(el),
+      }).map((sh) => ({ ...sh, opacity: sh.opacity * (el.opacity ?? 1) }));
     } else if (el.type === 'band') {
       // A full-circumference rectangle, emitted out to the BLEED - not to
       // u 0..1 and v 0..1.

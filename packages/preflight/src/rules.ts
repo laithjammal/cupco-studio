@@ -297,7 +297,12 @@ export const qrSize: Rule = ({ design, geom }) => {
   const issues: PreflightIssue[] = [];
   for (const el of design.elements) {
     if (!el.qr) continue;
-    const widthMm = designWidthToMm(el.widthU, el.v, geom);
+    // The code may occupy only part of its artwork: a frame is a light ground
+    // around it, so the artwork is wider than the code. Measuring modules
+    // against the artwork width would report a swirl-framed code as twice the
+    // size it actually prints.
+    const artMm = designWidthToMm(el.widthU, el.v, geom);
+    const widthMm = artMm * (el.qr.codeFraction ?? 1);
     const modulesAcross = el.qr.moduleCount + 8;
     const moduleMm = widthMm / modulesAcross;
     if (moduleMm >= MIN_QR_MODULE_MM) continue;
@@ -308,7 +313,7 @@ export const qrSize: Rule = ({ design, geom }) => {
       severity: 'warning',
       ...named(el),
       message: 'The QR code is too small to scan reliably off a curved cup.',
-      remedy: `Make it at least ${mm(neededMm)} wide, or shorten the address so the code needs fewer modules.`,
+      remedy: `Make it at least ${mm(neededMm / (el.qr.codeFraction ?? 1))} wide, or shorten the address so the code needs fewer modules.`,
       measurement: `${moduleMm.toFixed(2)}mm per module at ${mm(widthMm)} wide; ${MIN_QR_MODULE_MM}mm is the practical floor`,
     });
   }

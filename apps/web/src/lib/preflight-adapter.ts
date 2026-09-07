@@ -79,7 +79,10 @@ export function toPreflightDesign(
     if (el.type === 'qr') {
       return {
         ...base,
-        qr: { url: el.url, live: el.live, moduleCount: el.moduleCount },
+        qr: {
+          url: el.url, live: el.live, moduleCount: el.moduleCount,
+          codeFraction: el.codeFraction,
+        },
       };
     }
     return base;

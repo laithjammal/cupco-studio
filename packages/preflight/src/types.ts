@@ -61,7 +61,18 @@ export interface PreflightElement {
 
   image?: { naturalWidth: number; naturalHeight: number };
   text?: { content: string; sizeV: number };
-  qr?: { url: string; live: boolean; moduleCount: number };
+  qr?: {
+    url: string;
+    live: boolean;
+    moduleCount: number;
+    /**
+     * Width of the code and its quiet zone as a fraction of the artwork's
+     * width. Absent means 1 - the code fills its artwork, which is the plain
+     * square. A frame is a light ground AROUND the code, so the artwork is
+     * wider than the code and the modules are correspondingly smaller.
+     */
+    codeFraction?: number;
+  };
 }
 
 /** The design as preflight sees it. */

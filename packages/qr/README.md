@@ -1,6 +1,6 @@
 # @cupco/qr
 
-Scannable QR codes as **vector artwork**, in six styles.
+Scannable QR codes as **vector artwork**, in six styles and eight shapes.
 
 Output is plain geometry in a unit box — the same shape an imported SVG logo becomes — so
 inside Cupco Studio a QR travels the identical path as any other artwork: it warps onto the
@@ -11,13 +11,48 @@ Rasterising a QR is the one thing guaranteed to make it unscannable in print.
 and nothing else.
 
 ```ts
-import { buildQrArtwork, getQrStyle, normaliseUrl, QR_STYLES } from '@cupco/qr';
+import { buildQrArtwork, getQrStyle, normaliseUrl, QR_STYLES, QR_FRAMES } from '@cupco/qr';
 
 const url = normaliseUrl('cupco.com.au');          // -> 'https://cupco.com.au/' or null
-const { art, moduleCount, pathCount } = buildQrArtwork(url!, {
-  style: getQrStyle('pebble'),
+const { art, moduleCount, codeFraction } = buildQrArtwork(url!, {
+  style: getQrStyle('pebble'),                     // how each module is DRAWN
+  frame: 'coffee-cup',                             // the SHAPE it sits in
 });
 ```
+
+## Shapes
+
+| | |
+|---|---|
+| **Square** | The plain ground. Smallest artwork for a given module size. |
+| **Circle** | A round plate. The classic alternative. |
+| **Ring** | A round plate inside a bold outer ring. |
+| **Star** | Five-pointed. Most decorative, smallest code for its size. |
+| **Hexagon** | Six-sided. Tighter than a circle for the same code. |
+| **Badge** | A shield, pointed at the base. |
+| **Coffee cup** | A takeaway cup, code on the body, lid on top. |
+| **Swirl** | A round plate with spiral arms turning out of it. |
+
+### A shape is the GROUND, never a mask
+
+The obvious reading of "a round QR code" is a code clipped to a circle. That cannot work.
+The module grid is fixed by the data — modules can be restyled but never moved — and the
+three finder patterns sit in three **corners** of the square. A circle inscribed in the code
+clips exactly those corners, and a code with no finders is not located at all, let alone
+read.
+
+So the shape is the light ground the code is printed on, sized to contain the code **and its
+full quiet zone**. On a dark cup "light" means "inside the plate", so the whole
+code-plus-quiet-zone square has to fall inside the outline, corners included. That is a real
+cost: a circle containing a square is √2 times its width, so the code ends up about 69% of
+the artwork, and 49% in the swirl.
+
+`codeFraction` reports it, because the printable floor is a **module** size: a framed code
+placed at the same width has proportionally smaller modules. Preflight uses it, and the
+picker tells you how much wider to place the artwork.
+
+Containment is asserted per shape by sampling the square's outline against the frame
+polygon — not argued for in trigonometry.
 
 ## Styles
 
@@ -83,7 +118,7 @@ that it scans.
 independent of the code under test, so a shared bug cannot make both agree.
 
 ```bash
-npm test                                              # 62 tests
+npm test                                              # 92 tests
 npx tsx scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg
 ```
 
@@ -98,7 +133,7 @@ everything here is about turning that grid into geometry that still scans.
 
 ```bash
 npm install          # qrcode-generator, plus two decoders for the tests
-npm test             # 62 tests
+npm test             # 92 tests
 npm run build        # dist/ — JavaScript plus .d.ts, for consumers who need it
 ```
 

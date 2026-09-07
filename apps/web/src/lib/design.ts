@@ -12,7 +12,7 @@ import type { PlacedArtwork } from '@cupco/vector';
 import {
   rgbToCmyk, simulateCmykPrint, hexToRgb, rgbToHex,
 } from '@cupco/vector';
-import { buildQrArtwork, normaliseUrl, getQrStyle } from '@cupco/qr';
+import { buildQrArtwork, normaliseUrl, getQrStyle, type QrFrameId } from '@cupco/qr';
 import { cssFamily, getLoadedFont, layoutText, resolveWeight } from './fonts';
 
 export type ElementId = string;
@@ -128,6 +128,16 @@ export interface QrElement extends ElementBase {
   moduleCount: number;
   /** A preset from QR_STYLES. Only changes how modules are DRAWN. */
   styleId: string;
+  /** A preset from QR_FRAMES: the SHAPE the code sits in. */
+  frameId: QrFrameId;
+  /**
+   * Width of the code and its quiet zone as a fraction of the artwork's width.
+   *
+   * 1 for the plain square, less inside any frame. Carried on the element
+   * because the printable floor is a MODULE size, and preflight cannot work
+   * that out from `widthU` alone once the artwork is bigger than the code.
+   */
+  codeFraction: number;
 }
 
 export type DesignElement =
@@ -169,28 +179,40 @@ export function createTextElement(content = 'CUPCO'): TextElement {
   };
 }
 
+/**
+ * Rebuild a QR's artwork.
+ *
+ * One place, because URL, style and frame all feed the same builder and three
+ * near-identical copies of this call is how they drift apart.
+ */
+function qrArt(url: string, styleId: string, frameId: QrFrameId) {
+  const target = normaliseUrl(url) ?? 'https://example.com';
+  const { art, moduleCount, codeFraction } =
+    buildQrArtwork(target, { style: getQrStyle(styleId), frame: frameId });
+  return { art, moduleCount, codeFraction };
+}
+
 export function createQrElement(
   url: string,
   placeholderUrl = 'https://example.com',
   styleId = 'classic',
+  frameId: QrFrameId = 'none',
 ): QrElement {
-  const target = normaliseUrl(url) ?? placeholderUrl;
   const live = normaliseUrl(url) !== null;
-  const { art, moduleCount } = buildQrArtwork(target, { style: getQrStyle(styleId) });
+  const built = qrArt(normaliseUrl(url) ?? placeholderUrl, styleId, frameId);
   return {
     id: nextId(), type: 'qr', name: live ? 'QR code' : 'QR code (placeholder)',
     u: 0.75, v: 0.55, rotation: 0,
-    url, live, art, widthU: 0.13, moduleCount, styleId,
+    url, live, widthU: 0.13, styleId, frameId, ...built,
   };
 }
 
-/** Rebuild a QR element's artwork for a new URL, keeping its style. */
+/** Rebuild a QR element's artwork for a new URL, keeping its style and frame. */
 export function withQrUrl(el: QrElement, url: string): QrElement {
   const normalised = normaliseUrl(url);
-  const { art, moduleCount } = buildQrArtwork(
-    normalised ?? 'https://example.com', { style: getQrStyle(el.styleId) });
   return {
-    ...el, url, live: normalised !== null, art, moduleCount,
+    ...el, url, live: normalised !== null,
+    ...qrArt(normalised ?? 'https://example.com', el.styleId, el.frameId),
     name: normalised ? 'QR code' : 'QR code (placeholder)',
   };
 }
@@ -202,9 +224,17 @@ export function withQrUrl(el: QrElement, url: string): QrElement {
  * module count and everything the code encodes stay identical.
  */
 export function withQrStyle(el: QrElement, styleId: string): QrElement {
-  const target = normaliseUrl(el.url) ?? 'https://example.com';
-  const { art, moduleCount } = buildQrArtwork(target, { style: getQrStyle(styleId) });
-  return { ...el, styleId, art, moduleCount };
+  return { ...el, styleId, ...qrArt(el.url, styleId, el.frameId) };
+}
+
+/**
+ * Rebuild a QR element's artwork in a different frame, keeping its URL.
+ *
+ * The frame is the light ground the code sits on, so the code itself is
+ * untouched here too - only how much of the artwork it occupies changes.
+ */
+export function withQrFrame(el: QrElement, frameId: QrFrameId): QrElement {
+  return { ...el, frameId, ...qrArt(el.url, el.styleId, frameId) };
 }
 
 export function createBandElement(color = '#0f172a', v = 0.25, heightV = 0.22): BandElement {
@@ -506,12 +536,12 @@ export function renderDesign(
       } else if (el.type === 'qr') {
         const w = el.widthU * width;
         const h = w * el.art.aspect * stretchOf(el);
-        // The white ground is part of the code: scanners need the quiet zone
-        // and the light modules to contrast, whatever colour the cup is.
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(-w / 2, -h / 2, w, h);
-        ctx.fillStyle = '#000000';
+        // The light ground is the artwork's FIRST shape now, emitted by the QR
+        // builder with the frame, so it is drawn like any other - not painted
+        // here as a white rectangle. It stopped being a rectangle the moment
+        // frames existed, and each shape carries its own fill.
         for (const shape of el.art.shapes) {
+          ctx.fillStyle = `rgb(${shape.fill[0]},${shape.fill[1]},${shape.fill[2]})`;
           ctx.beginPath();
           for (const sp of shape.subpaths) {
             sp.forEach((pt, i) => {

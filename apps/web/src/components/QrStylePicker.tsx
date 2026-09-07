@@ -10,7 +10,9 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { QR_STYLES, buildQrArtwork, getQrStyle, normaliseUrl } from '@cupco/qr';
+import {
+  QR_STYLES, QR_FRAMES, buildQrArtwork, getQrStyle, normaliseUrl, type QrFrameId,
+} from '@cupco/qr';
 
 /**
  * Backing-store size for a swatch, in pixels.
@@ -25,10 +27,12 @@ const SWATCH_PX = 192;
 export default function QrStylePicker({
   url,
   styleId,
+  frameId,
   onChange,
 }: {
   url: string;
   styleId: string;
+  frameId: QrFrameId;
   onChange: (styleId: string) => void;
 }) {
   const active = getQrStyle(styleId);
@@ -45,7 +49,7 @@ export default function QrStylePicker({
             onClick={() => onChange(preset.id)}
             title={preset.description}
           >
-            <Swatch url={url} styleId={preset.id} />
+            <Swatch url={url} styleId={preset.id} frameId={frameId} />
             <span className="qrstyle__name">{preset.name}</span>
           </button>
         ))}
@@ -55,7 +59,57 @@ export default function QrStylePicker({
   );
 }
 
-function Swatch({ url, styleId }: { url: string; styleId: string }) {
+/**
+ * Pick the SHAPE the code sits in.
+ *
+ * A frame is the light ground, never a mask: the finder patterns live in three
+ * corners of the square, so clipping a code to a shape removes them and it
+ * stops being locatable. The swatches make the trade-off visible - the more
+ * elaborate the frame, the smaller the code inside it, and the bigger the
+ * artwork has to be placed to keep the modules printable.
+ */
+export function QrFramePicker({
+  url, styleId, frameId, onChange,
+}: {
+  url: string;
+  styleId: string;
+  frameId: QrFrameId;
+  onChange: (frameId: QrFrameId) => void;
+}) {
+  const active = QR_FRAMES.find((f) => f.id === frameId) ?? QR_FRAMES[0]!;
+  const { codeFraction } = buildQrArtwork(
+    normaliseUrl(url) ?? 'https://example.com', { frame: frameId },
+  );
+  return (
+    <div className="field">
+      <label>QR shape</label>
+      <div className="qrstyles">
+        {QR_FRAMES.map((preset) => (
+          <button
+            key={preset.id}
+            className="qrstyle"
+            data-sel={preset.id === frameId}
+            onClick={() => onChange(preset.id)}
+            title={preset.description}
+          >
+            <Swatch url={url} styleId={styleId} frameId={preset.id} />
+            <span className="qrstyle__name">{preset.name}</span>
+          </button>
+        ))}
+      </div>
+      <div className="hint">
+        {active.description}
+        {codeFraction < 0.999 && (
+          <> The code fills {Math.round(codeFraction * 100)}% of the artwork here,
+          so place it about {(1 / codeFraction).toFixed(1)}× wider than a plain square
+          to keep the modules the same size.</>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Swatch({ url, styleId, frameId }: { url: string; styleId: string; frameId: QrFrameId }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -64,23 +118,31 @@ function Swatch({ url, styleId }: { url: string; styleId: string }) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    canvas.width = SWATCH_PX;
-    canvas.height = SWATCH_PX;
-
     const { art } = buildQrArtwork(
       normaliseUrl(url) ?? 'https://example.com',
-      { style: getQrStyle(styleId) },
+      { style: getQrStyle(styleId), frame: frameId, dark: [15, 23, 42] },
     );
 
-    ctx.fillStyle = '#ffffff';
+    // Square backing store, with the artwork letterboxed inside it: a frame
+    // can be taller than it is wide, and squashing it to a square swatch would
+    // show a distorted code that nothing else in the app would ever produce.
+    canvas.width = SWATCH_PX;
+    canvas.height = SWATCH_PX;
+    const scale = art.aspect > 1 ? SWATCH_PX / art.aspect : SWATCH_PX;
+    const offX = (SWATCH_PX - scale) / 2;
+    const offY = (SWATCH_PX - scale * art.aspect) / 2;
+
+    // A grey ground, not white: the frame's own light plate is the thing being
+    // chosen, and on white it would be invisible.
+    ctx.fillStyle = '#e2e8f0';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#0f172a';
     for (const shape of art.shapes) {
+      ctx.fillStyle = `rgb(${shape.fill[0]},${shape.fill[1]},${shape.fill[2]})`;
       ctx.beginPath();
       for (const sp of shape.subpaths) {
         sp.forEach((p, i) => {
-          const x = p.x * canvas.width;
-          const y = p.y * canvas.height;
+          const x = offX + p.x * scale;
+          const y = offY + p.y * scale;
           if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         });
         ctx.closePath();
@@ -89,7 +151,7 @@ function Swatch({ url, styleId }: { url: string; styleId: string }) {
       // light rings are holes cut by reverse winding, not white paint on top.
       ctx.fill();
     }
-  }, [url, styleId]);
+  }, [url, styleId, frameId]);
 
   return <canvas ref={ref} className="qrstyle__swatch" />;
 }
