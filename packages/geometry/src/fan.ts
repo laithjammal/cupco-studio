@@ -2,20 +2,25 @@
  * Fan outline construction - the production dieline.
  *
  * Produces the annular-sector boundary for a profile at a chosen offset:
- * trim, bleed (outset) or safe area (inset). These are the lines the internal
- * Production Studio draws, and the shapes the export clips against.
+ * trim, the cut line (outset) or the safe area (inset). These are the lines
+ * the internal Production Studio draws, and the shapes the export clips
+ * against.
  *
  * Offsets are applied in the natural directions of the sector:
  *   - radially at the top and bottom arcs (rho +/- offset)
  *   - angularly at the seam edges, converted from a LINEAR mm offset at each
  *     radius, because a constant linear inset subtends a varying angle.
+ *
+ * Every offset is PER EDGE. A fan blank is not a uniform outset of the cup:
+ * the bottom runs past the base by the material the base seam consumes, and
+ * the two seam edges differ because one laps over the other.
  */
 
 import type { FrustumGeometry } from './frustum';
 import type { CupProfile, Point2 } from './types';
 import { designToFan } from './mapping';
 
-export type FanBoundary = 'trim' | 'bleed' | 'safe';
+export type FanBoundary = 'trim' | 'cut' | 'safe';
 
 export interface FanOutline {
   boundary: FanBoundary;
@@ -30,16 +35,17 @@ export interface FanBounds {
 }
 
 /**
- * Radial and angular offsets for a boundary, in mm.
+ * Per-edge offsets for a boundary, in mm.
  * Positive = outward from the trim line.
  */
 function offsetsFor(boundary: FanBoundary, profile: CupProfile) {
   switch (boundary) {
     case 'trim':
-      return { top: 0, bottom: 0, seam: 0 };
-    case 'bleed': {
-      const b = profile.margins.bleedMm;
-      return { top: b, bottom: b, seam: b };
+      return { top: 0, bottom: 0, left: 0, right: 0 };
+    case 'cut': {
+      // Asymmetric on purpose. See CutMargins.
+      const c = profile.margins.cut;
+      return { top: c.topMm, bottom: c.bottomMm, left: c.leftMm, right: c.rightMm };
     }
     case 'safe':
       // Safe insets are ABSOLUTE distances from the trim edge, NOT additive
@@ -56,7 +62,8 @@ function offsetsFor(boundary: FanBoundary, profile: CupProfile) {
       return {
         top: -profile.margins.safeTopMm,
         bottom: -profile.margins.safeBottomMm,
-        seam: -profile.margins.safeSeamMm,
+        left: -profile.margins.safeSeamMm,
+        right: -profile.margins.safeSeamMm,
       };
   }
 }
@@ -80,15 +87,13 @@ export function buildFanOutline(
   const rhoOuter = geom.rTopMm + off.top;
 
   // A linear seam offset subtends a different angle at each radius, so convert
-  // per-radius rather than applying one angular constant.
+  // per-radius rather than applying one angular constant - and per EDGE, since
+  // the two sides of a fan blank are not the same distance out.
   const halfTheta = geom.sectorAngleRad / 2;
-  const dPsiInner = off.seam / rhoInner;
-  const dPsiOuter = off.seam / rhoOuter;
-
-  const psiInnerStart = -halfTheta - dPsiInner;
-  const psiInnerEnd = halfTheta + dPsiInner;
-  const psiOuterStart = -halfTheta - dPsiOuter;
-  const psiOuterEnd = halfTheta + dPsiOuter;
+  const psiInnerStart = -halfTheta - off.left / rhoInner;
+  const psiInnerEnd = halfTheta + off.right / rhoInner;
+  const psiOuterStart = -halfTheta - off.left / rhoOuter;
+  const psiOuterEnd = halfTheta + off.right / rhoOuter;
 
   const points: Point2[] = [];
   const at = (rho: number, psi: number): Point2 => ({
@@ -121,36 +126,6 @@ export function fanBounds(points: readonly Point2[]): FanBounds {
     if (p.y > maxY) maxY = p.y;
   }
   return { minX, minY, maxX, maxY, widthMm: maxX - minX, heightMm: maxY - minY };
-}
-
-/**
- * The seam overlap strip, as a polygon in fan space.
- *
- * Artwork must CONTINUE into this strip so no white sliver shows at the glued
- * seam. On the finished cup it is lapped over and hidden.
- */
-export function buildOverlapStrip(
-  profile: CupProfile,
-  geom: FrustumGeometry,
-  arcSegments = 32,
-): Point2[] {
-  const halfTheta = geom.sectorAngleRad / 2;
-  const w = profile.seam.overlapMm;
-  const points: Point2[] = [];
-  const at = (rho: number, psi: number): Point2 => ({
-    x: rho * Math.sin(psi),
-    y: -rho * Math.cos(psi),
-  });
-
-  for (let i = 0; i <= arcSegments; i++) {
-    const rho = geom.rBottomMm + (geom.slantMm * i) / arcSegments;
-    points.push(at(rho, halfTheta));
-  }
-  for (let i = arcSegments; i >= 0; i--) {
-    const rho = geom.rBottomMm + (geom.slantMm * i) / arcSegments;
-    points.push(at(rho, halfTheta + w / rho));
-  }
-  return points;
 }
 
 /** Render a fan outline as an SVG path `d` string, in mm units. */

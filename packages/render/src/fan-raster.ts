@@ -29,7 +29,7 @@ import { createImage, sampleBilinear, type RasterImage, type RGBA } from './imag
 export interface FanRasterOptions {
   /** Output resolution. Defaults to the profile's exportDpi. */
   dpi?: number;
-  /** Which boundary the output canvas should cover. Defaults to 'bleed'. */
+  /** Which boundary the output canvas should cover. Defaults to 'cut'. */
   boundary?: FanBoundary;
   /** Fill for pixels outside the sector. Defaults to transparent. */
   background?: RGBA;
@@ -92,7 +92,7 @@ export function rasteriseFan(
   options: FanRasterOptions = {},
 ): FanRasterResult {
   const dpi = options.dpi ?? profile.exportDpi;
-  const boundary = options.boundary ?? 'bleed';
+  const boundary = options.boundary ?? 'cut';
   const wrapU = options.wrapU ?? true;
   const ss = Math.max(1, Math.floor(options.supersample ?? 1));
   const bg = options.background ?? ([0, 0, 0, 0] as const);
@@ -130,11 +130,18 @@ export function rasteriseFan(
   // linear distance, so it subtends a larger angle at the inner arc than at
   // the outer. A single max angle would over-include near the rim and clip
   // near the base, so the limit is recomputed per sample radius.
-  const seamOffsetMm =
-    boundary === 'bleed' ? profile.margins.bleedMm
+  // Per EDGE as well as per radius: a fan blank's two seam edges are not the
+  // same distance out from trim.
+  const seamLeftMm =
+    boundary === 'cut' ? profile.margins.cut.leftMm
     : boundary === 'safe' ? -profile.margins.safeSeamMm
     : 0;
-  const psiLimitAt = (rho: number) => halfTheta + seamOffsetMm / rho;
+  const seamRightMm =
+    boundary === 'cut' ? profile.margins.cut.rightMm
+    : boundary === 'safe' ? -profile.margins.safeSeamMm
+    : 0;
+  const psiMinAt = (rho: number) => -halfTheta - seamLeftMm / rho;
+  const psiMaxAt = (rho: number) => halfTheta + seamRightMm / rho;
 
   const sample: number[] = [0, 0, 0, 0];
   const acc: number[] = [0, 0, 0, 0];
@@ -155,7 +162,7 @@ export function rasteriseFan(
           const rho = Math.hypot(mmX, mmY);
           if (rho < rhoMin || rho > rhoMax) continue;
           const psi = Math.atan2(mmX, -mmY);
-          if (Math.abs(psi) > psiLimitAt(rho)) continue;
+          if (psi < psiMinAt(rho) || psi > psiMaxAt(rho)) continue;
 
           const uv = fanToDesign({ x: mmX, y: mmY }, geom);
           sampleBilinear(design, uv.u, uv.v, wrapU, sample);

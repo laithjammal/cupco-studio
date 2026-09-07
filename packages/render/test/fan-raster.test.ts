@@ -15,13 +15,16 @@ function pixelAt(
 }
 
 describe('rasteriseFan — output sizing', () => {
-  it('sizes the canvas from the bleed bounds at the requested dpi', () => {
+  it('sizes the canvas from the cut bounds at the requested dpi', () => {
     const { transform: t } = rasteriseFan(createSolid(8, 8, [255, 0, 0, 255]), CUP_8OZ, g8, { dpi: 150 });
     expect(t.dpi).toBe(150);
     expect(t.mmPerPixel).toBeCloseTo(25.4 / 150, 10);
-    // 8oz blank with 5mm bleed is ~239.9 x 115.7mm.
-    expect(t.widthMm).toBeGreaterThan(230);
-    expect(t.widthMm).toBeLessThan(250);
+    // The 8oz blank out to its cut line is 244.33 x 122.97mm, plus the
+    // rasteriser's own 3mm of padding on each side.
+    expect(t.widthMm).toBeGreaterThan(244);
+    expect(t.widthMm).toBeLessThan(256);
+    expect(t.heightMm).toBeGreaterThan(123);
+    expect(t.heightMm).toBeLessThan(135);
     expect(t.widthPx).toBe(Math.ceil(t.widthMm / t.mmPerPixel));
     expect(t.heightPx).toBe(Math.ceil(t.heightMm / t.mmPerPixel));
   });
@@ -88,7 +91,7 @@ describe('rasteriseFan — the sector mask', () => {
   });
 
   it('a bleed raster covers more area than a trim raster', () => {
-    const bleed = rasteriseFan(design, CUP_8OZ, g8, { dpi: 100, boundary: 'bleed' }).transform;
+    const bleed = rasteriseFan(design, CUP_8OZ, g8, { dpi: 100, boundary: 'cut' }).transform;
     const trim = rasteriseFan(design, CUP_8OZ, g8, { dpi: 100, boundary: 'trim' }).transform;
     expect(bleed.widthMm).toBeGreaterThan(trim.widthMm);
     expect(bleed.heightMm).toBeGreaterThan(trim.heightMm);

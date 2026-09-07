@@ -60,29 +60,40 @@ export const CUP_8OZ: CupProfile = {
     'against the drawing vector geometry to within 0.05mm. Height confirmed VERTICAL by Cupco ' +
     '2026-08-26. Source drawing marked "for reference, final drawing after mold finished and ' +
     'tested" - re-confirm before a production run. ' +
-    'MARGINS: bleed 5mm, seam overlap 6mm, seam clearance 4mm, rim curl 7mm, top print limit ' +
-    '3mm and bottom print limit 2mm all supplied by Cupco 2026-08-26. baseAllowanceMm remains ' +
-    'an estimate but is informational only and affects no output.',
+    'MARGINS: seam overlap 6mm, seam clearance 4mm, rim curl 7mm, top print limit 3mm and ' +
+    'bottom print limit 2mm all supplied by Cupco 2026-08-26. CUT LINE measured off a real ' +
+    'fan blank 2026-09-07 and it is not a uniform outset: top 9, bottom 7, left 9, right 3mm. ' +
+    'The 5mm uniform "bleed" Cupco quoted verbally drew a fan of the wrong shape. The 7mm at ' +
+    'the bottom supersedes the previous baseAllowanceMm estimate of 5mm.',
   dimensions: {
     topDiameterMm: 73.62,
     bottomDiameterMm: 55.0,
     heightMm: 90.0,
     heightIsSlant: false,
   },
-  // All print limits supplied by Cupco 2026-08-26.
-  //
   // Both figures here are PHYSICAL FACTS about how the cup is formed, not
-  // print limits: safe insets are absolute (see fan.ts offsetsFor), so neither
-  // value feeds any outline, preview or export. They are recorded for
-  // reference and for future preflight rules.
+  // print limits. Safe insets are absolute (see fan.ts offsetsFor), so neither
+  // drives the safe area. The base allowance now has a second life as the
+  // distance the blank runs past the cup's base - see margins.cut.bottomMm,
+  // which carries the same number.
   rimBase: {
     // ~7mm rolls into the rim curl. Print deliberately runs 4mm into this
     // zone - the printable limit is margins.safeTopMm.
     rimCurlAllowanceMm: 7.0,
-    baseAllowanceMm: 5.0, // Estimate. Informational only - affects no output.
+    // Measured off a real fan blank 2026-09-07: the blank runs 7mm past the
+    // cup's base, which is the material the base seam consumes. This is the
+    // same distance as margins.cut.bottomMm, and now it does drive output.
+    baseAllowanceMm: 7.0,
   },
   margins: {
-    bleedMm: 5.0,      // Cupco: "bleed of 5mm is good".
+    // Measured off a real fan blank 2026-09-07, against what the app drew.
+    // Not a uniform outset, and not the 5mm "bleed" Cupco quoted verbally.
+    cut: {
+      topMm: 9.0,     // was 5, out a further 4
+      bottomMm: 7.0,  // the blank is 7mm longer than the finished cup
+      leftMm: 9.0,    // was 5, out a further 4
+      rightMm: 3.0,   // was 5, IN by 2 - this edge laps under the other
+    },
     safeTopMm: 3.0,    // Cupco: "print up to 3mm of the top edge".
     safeBottomMm: 2.0, // Cupco: "can print to 2mm from the bottom".
     safeSeamMm: 4.0,   // Cupco: "print up to 4mm clear on the seam edge".
@@ -113,7 +124,10 @@ export const CUP_12OZ: CupProfile = {
     'in favour of 8oz. Export is blocked until real measurements are supplied.',
   dimensions: { topDiameterMm: 90.0, bottomDiameterMm: 60.0, heightMm: 110.0 },
   rimBase: { rimCurlAllowanceMm: 6.0, baseAllowanceMm: 5.0 },
-  margins: { bleedMm: 3.0, safeTopMm: 6.0, safeBottomMm: 6.0, safeSeamMm: 5.0 },
+  margins: {
+    cut: { topMm: 3.0, bottomMm: 3.0, leftMm: 3.0, rightMm: 3.0 },
+    safeTopMm: 6.0, safeBottomMm: 6.0, safeSeamMm: 5.0,
+  },
   seam: { positionRad: Math.PI, overlapMm: 5.0, visibleStartOffsetMm: 5.0 },
   designSpaceMode: 'angular',
   designCanvas: { widthPx: 3340, heightPx: 1311, dpi: 300 },
@@ -136,7 +150,10 @@ export const CUP_16OZ: CupProfile = {
     'in favour of 8oz. Export is blocked until real measurements are supplied.',
   dimensions: { topDiameterMm: 90.0, bottomDiameterMm: 60.0, heightMm: 135.0 },
   rimBase: { rimCurlAllowanceMm: 6.0, baseAllowanceMm: 5.0 },
-  margins: { bleedMm: 3.0, safeTopMm: 6.0, safeBottomMm: 6.0, safeSeamMm: 5.0 },
+  margins: {
+    cut: { topMm: 3.0, bottomMm: 3.0, leftMm: 3.0, rightMm: 3.0 },
+    safeTopMm: 6.0, safeBottomMm: 6.0, safeSeamMm: 5.0,
+  },
   seam: { positionRad: Math.PI, overlapMm: 5.0, visibleStartOffsetMm: 5.0 },
   designSpaceMode: 'angular',
   designCanvas: { widthPx: 3340, heightPx: 1608, dpi: 300 },

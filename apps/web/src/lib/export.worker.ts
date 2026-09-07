@@ -46,7 +46,7 @@ self.onmessage = (e: MessageEvent<ExportRequest>) => {
       { width, height, data: new Uint8ClampedArray(buffer) },
       profile,
       geom,
-      { dpi, boundary: 'bleed', supersample },
+      { dpi, boundary: 'cut', supersample },
     );
 
     const res: ExportResponse = {

@@ -76,9 +76,31 @@ export interface RimAndBase {
  * time, so changing them re-derives every outline, preview and export with no
  * code change and no stored artwork to migrate.
  */
+/**
+ * Where the blank is die-cut, as distances OUTSIDE the trim line, mm.
+ *
+ * Per-edge, because a real fan blank is not a uniform outset of the finished
+ * cup. The bottom runs well past the cup's base — that material is consumed
+ * forming the base seam — and the two seam edges differ, because one laps over
+ * the other. A single `bleedMm` could describe none of that, and the fan it
+ * drew was measurably the wrong shape.
+ *
+ * `left` and `right` are the fan as it is DRAWN: left is design u=0, right is
+ * u=1. They are not left and right on the finished cup, which has no such
+ * thing.
+ *
+ * A negative value is legal and means the cut falls inside the trim line.
+ */
+export interface CutMargins {
+  topMm: number;
+  bottomMm: number;
+  leftMm: number;
+  rightMm: number;
+}
+
 export interface PrintMargins {
-  /** Bleed beyond the trim line on all fan edges, mm. */
-  bleedMm: number;
+  /** Where the blank is cut, per edge. */
+  cut: CutMargins;
   /**
    * ABSOLUTE inset from the top trim edge to the safe area, mm.
    *

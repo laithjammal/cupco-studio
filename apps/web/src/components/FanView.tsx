@@ -11,7 +11,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
-  buildFanOutline, buildOverlapStrip, designToFan, fanToDesign,
+  buildFanOutline, designToFan, fanToDesign,
   type CupProfile, type FrustumGeometry, type FanBoundary,
 } from '@cupco/geometry';
 import { rasteriseFan, fanMmToPixel, type FanRasterTransform } from '@cupco/render';
@@ -38,11 +38,10 @@ export interface FanViewProps {
   previewDpi?: number;
 }
 
-const GUIDE_STYLE: Record<FanBoundary | 'overlap', { stroke: string; dash: number[]; label: string }> = {
-  trim:    { stroke: '#0f172a', dash: [],     label: 'Trim' },
-  bleed:   { stroke: '#db2777', dash: [8, 5], label: 'Bleed' },
-  safe:    { stroke: '#0284c7', dash: [4, 4], label: 'Safe area' },
-  overlap: { stroke: '#16a34a', dash: [],     label: 'Seam overlap' },
+const GUIDE_STYLE: Record<FanBoundary, { stroke: string; dash: number[]; label: string }> = {
+  trim: { stroke: '#0f172a', dash: [],     label: 'Trim' },
+  cut:  { stroke: '#db2777', dash: [8, 5], label: 'Cut' },
+  safe: { stroke: '#0284c7', dash: [4, 4], label: 'Safe area' },
 };
 
 /**
@@ -119,7 +118,7 @@ export default function FanView({
     const { image, transform: tf } = rasteriseFan(
       { width: src.width, height: src.height, data: src.data },
       profile, geom,
-      { dpi: fast ? DRAG_DPI : previewDpi, boundary: 'bleed', supersample: fast ? 1 : 2 },
+      { dpi: fast ? DRAG_DPI : previewDpi, boundary: 'cut', supersample: fast ? 1 : 2 },
     );
 
     // Assigning canvas.width CLEARS the canvas even when the value is
@@ -191,7 +190,7 @@ export default function FanView({
         {transform && (
           <>
             <span><strong>{profile.displayName}</strong></span>
-            <span>{(transform.widthMm - 6).toFixed(2)} × {(transform.heightMm - 6).toFixed(2)} mm incl. bleed</span>
+            <span>{(transform.widthMm - 6).toFixed(2)} × {(transform.heightMm - 6).toFixed(2)} mm to the cut</span>
             <span>{dragging ? `live ${DRAG_DPI} dpi` : `preview ${transform.dpi} dpi`}</span>
             {ms !== null && !dragging && <span>{ms} ms</span>}
             <span>{design.elements.length} element{design.elements.length === 1 ? '' : 's'}</span>
@@ -199,7 +198,7 @@ export default function FanView({
         )}
       </div>
       <div className="legend">
-        {showGuides && (['trim', 'bleed', 'safe', 'overlap'] as const).map((k) => (
+        {showGuides && (['trim', 'cut', 'safe'] as const).map((k) => (
           <span key={k} className="legend__item">
             <i style={{ background: GUIDE_STYLE[k].stroke }} />{GUIDE_STYLE[k].label}
           </span>
@@ -235,15 +234,7 @@ function drawGuides(
   ctx.save();
   ctx.lineJoin = 'round';
 
-  traceMm(ctx, buildOverlapStrip(profile, geom, 96), t);
-  ctx.fillStyle = 'rgba(22,163,74,0.20)';
-  ctx.fill();
-  ctx.strokeStyle = GUIDE_STYLE.overlap.stroke;
-  ctx.lineWidth = Math.max(1, 0.25 * scale);
-  ctx.setLineDash([]);
-  ctx.stroke();
-
-  for (const b of ['bleed', 'trim', 'safe'] as const) {
+  for (const b of ['cut', 'trim', 'safe'] as const) {
     const s = GUIDE_STYLE[b];
     traceMm(ctx, buildFanOutline(profile, geom, b, 512).points, t);
     ctx.strokeStyle = s.stroke;

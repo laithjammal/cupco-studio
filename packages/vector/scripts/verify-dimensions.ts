@@ -13,7 +13,7 @@ const PT_PER_MM = 72 / 25.4;
 const PAD = 3; // blank margin the exporters add around the bleed outline
 
 const g = deriveFrustum(CUP_8OZ.dimensions);
-const raw = fanBounds(buildFanOutline(CUP_8OZ, g, 'bleed', 1024).points);
+const raw = fanBounds(buildFanOutline(CUP_8OZ, g, 'cut', 1024).points);
 const expectW = raw.widthMm + PAD * 2;
 const expectH = raw.heightMm + PAD * 2;
 
@@ -54,7 +54,8 @@ console.log('\nPHYSICAL CROSS-CHECK');
 console.log(`  top arc      : ${g.topArcMm.toFixed(4)} mm  (pi x ${CUP_8OZ.dimensions.topDiameterMm} = ${(Math.PI * CUP_8OZ.dimensions.topDiameterMm).toFixed(4)})`);
 console.log(`  bottom arc   : ${g.bottomArcMm.toFixed(4)} mm  (pi x ${CUP_8OZ.dimensions.bottomDiameterMm} = ${(Math.PI * CUP_8OZ.dimensions.bottomDiameterMm).toFixed(4)})`);
 console.log(`  slant        : ${g.slantMm.toFixed(4)} mm`);
-console.log(`  bleed each side: ${CUP_8OZ.margins.bleedMm} mm`);
+const c = CUP_8OZ.margins.cut;
+console.log(`  cut: ${c.topMm}mm top, ${c.bottomMm}mm base, ${c.leftMm}mm left, ${c.rightMm}mm right`);
 
 console.log(`\n${pdfOk && rasterOk ? 'ALL DIMENSIONS CORRECT' : 'DIMENSION MISMATCH FOUND'}`);
 process.exit(pdfOk && rasterOk ? 0 : 1);

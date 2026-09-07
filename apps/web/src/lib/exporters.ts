@@ -8,7 +8,7 @@
 
 import { PDFDocument } from 'pdf-lib';
 import {
-  buildFanOutline, buildOverlapStrip,
+  buildFanOutline,
   type CupProfile, type FrustumGeometry,
 } from '@cupco/geometry';
 
@@ -126,7 +126,7 @@ export async function exportFanPdf(
   pdf.setTitle(`Cupco ${profile.displayName} production fan`);
   pdf.setSubject(
     `Fan blank ${r.transform.widthMm.toFixed(2)} x ${r.transform.heightMm.toFixed(2)} mm ` +
-    `(incl. ${profile.margins.bleedMm}mm bleed). Sector ${geom.sectorAngleDeg.toFixed(4)} deg, ` +
+    `(to the cut line). Sector ${geom.sectorAngleDeg.toFixed(4)} deg, ` +
     `R_bottom ${geom.rBottomMm.toFixed(4)} mm, R_top ${geom.rTopMm.toFixed(4)} mm.`,
   );
   pdf.setProducer('Cupco Studio');
@@ -194,8 +194,7 @@ export async function exportFanSvg(
            xlink:href="${r.dataUrl}" />
   </g>
   <g id="dieline" transform="translate(${tx.toFixed(4)} ${ty.toFixed(4)})" fill="none">
-    <path id="overlap" d="${path(buildOverlapStrip(profile, geom, 128))}" fill="rgba(22,163,74,0.15)" stroke="#16a34a" stroke-width="0.2"/>
-    <path id="bleed" d="${path(buildFanOutline(profile, geom, 'bleed', 512).points)}" stroke="#db2777" stroke-width="0.25" stroke-dasharray="2 1"/>
+    <path id="cut" d="${path(buildFanOutline(profile, geom, 'cut', 512).points)}" stroke="#db2777" stroke-width="0.25" stroke-dasharray="2 1"/>
     <path id="trim" d="${path(buildFanOutline(profile, geom, 'trim', 512).points)}" stroke="#0f172a" stroke-width="0.4"/>
     <path id="safe" d="${path(buildFanOutline(profile, geom, 'safe', 512).points)}" stroke="#0284c7" stroke-width="0.25" stroke-dasharray="1 1"/>
   </g>

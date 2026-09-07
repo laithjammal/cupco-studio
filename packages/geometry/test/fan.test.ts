@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   deriveFrustum,
   buildFanOutline,
-  buildOverlapStrip,
   fanBounds,
   outlineToSvgPath,
   designBorderInFan,
@@ -19,23 +18,55 @@ describe('fan outline construction', () => {
     expect(Math.max(...radii)).toBeCloseTo(g8.rTopMm, 6);
   });
 
-  it('bleed is outside trim, safe area is inside it', () => {
+  it('the cut line is outside trim, the safe area is inside it', () => {
     const trim = fanBounds(buildFanOutline(CUP_8OZ, g8, 'trim').points);
-    const bleed = fanBounds(buildFanOutline(CUP_8OZ, g8, 'bleed').points);
+    const cut = fanBounds(buildFanOutline(CUP_8OZ, g8, 'cut').points);
     const safe = fanBounds(buildFanOutline(CUP_8OZ, g8, 'safe').points);
 
-    expect(bleed.widthMm).toBeGreaterThan(trim.widthMm);
-    expect(bleed.heightMm).toBeGreaterThan(trim.heightMm);
+    expect(cut.widthMm).toBeGreaterThan(trim.widthMm);
+    expect(cut.heightMm).toBeGreaterThan(trim.heightMm);
     expect(safe.widthMm).toBeLessThan(trim.widthMm);
     expect(safe.heightMm).toBeLessThan(trim.heightMm);
   });
 
-  it('bleed extends the rims by exactly the configured bleed', () => {
-    const { points } = buildFanOutline(CUP_8OZ, g8, 'bleed');
+  it('the cut extends each rim by exactly its own configured distance', () => {
+    const { points } = buildFanOutline(CUP_8OZ, g8, 'cut');
     const radii = points.map((p) => Math.hypot(p.x, p.y));
-    const b = CUP_8OZ.margins.bleedMm;
-    expect(Math.min(...radii)).toBeCloseTo(g8.rBottomMm - b, 6);
-    expect(Math.max(...radii)).toBeCloseTo(g8.rTopMm + b, 6);
+    const c = CUP_8OZ.margins.cut;
+    // rho grows toward the cup's TOP, so the bottom cut reduces the minimum.
+    expect(Math.min(...radii)).toBeCloseTo(g8.rBottomMm - c.bottomMm, 6);
+    expect(Math.max(...radii)).toBeCloseTo(g8.rTopMm + c.topMm, 6);
+  });
+
+  /**
+   * The fault this was written for. A single uniform outset drew a blank that
+   * was measurably the wrong shape against a real fan: too short at the base,
+   * and the same on both seam edges when the real ones differ.
+   */
+  it('puts each seam edge at its own distance from trim', () => {
+    const { points } = buildFanOutline(CUP_8OZ, g8, 'cut', 256);
+    const c = CUP_8OZ.margins.cut;
+    const halfTheta = g8.sectorAngleRad / 2;
+    // psi and rho of every point; the extreme psi at a given rho is the edge.
+    const polar = points.map((p) => ({
+      rho: Math.hypot(p.x, p.y), psi: Math.atan2(p.x, -p.y),
+    }));
+    const atTop = polar.filter((q) => Math.abs(q.rho - (g8.rTopMm + c.topMm)) < 1e-6);
+    const rhoTop = g8.rTopMm + c.topMm;
+    const left = Math.min(...atTop.map((q) => q.psi));
+    const right = Math.max(...atTop.map((q) => q.psi));
+    // Linear mm out from the trim edge, measured at this radius.
+    expect((-halfTheta - left) * rhoTop).toBeCloseTo(c.leftMm, 6);
+    expect((right - halfTheta) * rhoTop).toBeCloseTo(c.rightMm, 6);
+    expect(c.leftMm).not.toBeCloseTo(c.rightMm, 3);
+  });
+
+  /**
+   * The blank is longer than the cup because the base seam consumes material.
+   * The two numbers are the same physical fact and must not drift apart.
+   */
+  it('runs past the cup base by the recorded base allowance', () => {
+    expect(CUP_8OZ.margins.cut.bottomMm).toBeCloseTo(CUP_8OZ.rimBase.baseAllowanceMm, 6);
   });
 
   it('safe insets are ABSOLUTE, not additive with the rim curl', () => {
@@ -81,36 +112,13 @@ describe('fan outline construction', () => {
 
 describe('8oz fan physical size', () => {
   it('matches the derived geometry and fits a sane sheet', () => {
-    const b = fanBounds(buildFanOutline(CUP_8OZ, g8, 'bleed').points);
-    // Chord across the sector at the outer radius, plus bleed. Sanity-checks
+    const b = fanBounds(buildFanOutline(CUP_8OZ, g8, 'cut').points);
+    // Chord across the sector at the outer radius, out to the cut. Sanity-checks
     // that we are producing a cup-sized blank rather than something absurd.
     expect(b.widthMm).toBeGreaterThan(200);
     expect(b.widthMm).toBeLessThan(270);
     expect(b.heightMm).toBeGreaterThan(90);
     expect(b.heightMm).toBeLessThan(140);
-  });
-});
-
-describe('seam overlap strip', () => {
-  it('sits just outside the trim edge and spans the full slant', () => {
-    const strip = buildOverlapStrip(CUP_8OZ, g8);
-    const radii = strip.map((p) => Math.hypot(p.x, p.y));
-    expect(Math.min(...radii)).toBeCloseTo(g8.rBottomMm, 6);
-    expect(Math.max(...radii)).toBeCloseTo(g8.rTopMm, 6);
-  });
-
-  it('has constant LINEAR width, so its angular width varies with radius', () => {
-    // A constant angular strip would be the wrong shape — narrower in mm at
-    // the bottom rim, where the glue line is most likely to show.
-    const strip = buildOverlapStrip(CUP_8OZ, g8, 8);
-    const half = strip.length / 2;
-    const inner = strip[0]!;
-    const innerOuterEdge = strip[strip.length - 1]!;
-    const rhoInner = Math.hypot(inner.x, inner.y);
-    const dPsiInner =
-      Math.atan2(innerOuterEdge.x, -innerOuterEdge.y) - Math.atan2(inner.x, -inner.y);
-    expect(dPsiInner * rhoInner).toBeCloseTo(CUP_8OZ.seam.overlapMm, 6);
-    expect(half).toBeGreaterThan(0);
   });
 });
 

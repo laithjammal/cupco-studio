@@ -17,7 +17,7 @@ const res = importSvg(readFileSync('out/test-logo.svg', 'utf8'));
 const art = normaliseArtwork(res.shapes);
 const palette = extractPalette(res.shapes.map((s) => ({ fill: s.fill })));
 
-const bleed = buildFanOutline(CUP_8OZ, g, 'bleed', 1024);
+const bleed = buildFanOutline(CUP_8OZ, g, 'cut', 1024);
 const b = fanBounds(bleed.points);
 const pad = 3;
 const minX = b.minX - pad, minY = b.minY - pad;

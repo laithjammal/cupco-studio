@@ -181,15 +181,15 @@ describe('split provenance: dimensions vs margins', () => {
   });
 
   it('withMargins does not mutate the original profile', () => {
-    const before = CUP_8OZ.margins.bleedMm;
-    withMargins(CUP_8OZ, { margins: { bleedMm: 99 } });
-    expect(CUP_8OZ.margins.bleedMm).toBe(before);
+    const before = CUP_8OZ.margins.safeTopMm;
+    withMargins(CUP_8OZ, { margins: { safeTopMm: 99 } });
+    expect(CUP_8OZ.margins.safeTopMm).toBe(before);
   });
 });
 
 describe('confirmed 8oz margin values', () => {
   it('matches what Cupco supplied 2026-08-26', () => {
-    expect(CUP_8OZ.margins.bleedMm).toBe(5.0);
+    expect(CUP_8OZ.margins.cut).toEqual({ topMm: 9.0, bottomMm: 7.0, leftMm: 9.0, rightMm: 3.0 });
     expect(CUP_8OZ.seam.overlapMm).toBe(6.0);
     expect(CUP_8OZ.margins.safeSeamMm).toBe(4.0);
     expect(CUP_8OZ.rimBase.rimCurlAllowanceMm).toBe(7.0);

@@ -67,7 +67,7 @@ export const profileProvenance: Rule = ({ profile }) => {
       rule: 'profile-provenance',
       severity: 'warning',
       message: `${profile.displayName} has unconfirmed print margins, so artwork may crop at an edge or leave a gap at the seam.`,
-      remedy: 'Safe to proof. Confirm bleed, seam overlap and rim margins before a production run.',
+      remedy: 'Safe to proof. Confirm the cut line, seam overlap and rim margins before a production run.',
     });
   }
   return issues;

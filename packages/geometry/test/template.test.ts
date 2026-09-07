@@ -75,10 +75,11 @@ describe('artwork template — the file must actually open', () => {
     expect(w).not.toBeNull();
     expect(h).not.toBeNull();
     // Trim width plus bleed on both sides, plus the page padding.
-    const expectedW = g.topArcMm + CUP_8OZ.margins.bleedMm * 2 + 18 * 2;
+    const c = CUP_8OZ.margins.cut;
+    const expectedW = g.topArcMm + c.leftMm + c.rightMm + 18 * 2;
     expect(Number(w![1])).toBeCloseTo(expectedW, 1);
     // Height also carries the legend panel, so it must EXCEED the artwork box.
-    expect(Number(h![1])).toBeGreaterThan(g.slantMm + CUP_8OZ.margins.bleedMm * 2 + 36);
+    expect(Number(h![1])).toBeGreaterThan(g.slantMm + c.topMm + c.bottomMm + 36);
   });
 
   it('has a viewBox matching its declared size, so it scales correctly', () => {
@@ -99,15 +100,15 @@ describe('artwork template — the file must actually open', () => {
 
   it('the legend explains every guide line that is drawn', () => {
     const svg = buildArtworkTemplateSvg(CUP_8OZ);
-    for (const term of ['BLEED', 'TRIM', 'SAFE AREA', 'SEAM OVERLAP', 'CENTRE LINE']) {
+    for (const term of ['CUT', 'TRIM', 'SAFE AREA', 'CENTRE LINE']) {
       expect(svg).toContain(term);
     }
   });
 
   it('states the real measurements, not placeholders', () => {
     const svg = buildArtworkTemplateSvg(CUP_8OZ);
-    expect(svg).toContain(`${CUP_8OZ.margins.bleedMm}mm outside trim`);
-    expect(svg).toContain(`${CUP_8OZ.seam.overlapMm}mm, both edges`);
+    expect(svg).toContain(`${CUP_8OZ.margins.cut.bottomMm}mm base`);
+    expect(svg).not.toContain('SEAM OVERLAP');
   });
 
   it('detects a deliberately broken document', () => {

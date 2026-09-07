@@ -27,42 +27,44 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
 
   const W = geom.topArcMm;        // full circumference at the rim
   const H = geom.slantMm;         // rim to base, along the cup wall
-  const bleed = profile.margins.bleedMm;
   const safeT = profile.margins.safeTopMm;
   const safeB = profile.margins.safeBottomMm;
   const safeS = profile.margins.safeSeamMm;
-  const overlap = profile.seam.overlapMm;
   const bottomRatio = geom.bottomArcMm / geom.topArcMm;
 
+  // The cut line, per edge. A blank is not a uniform outset of the cup: the
+  // bottom runs past the base by the material the base seam takes, and the
+  // two seam edges differ because one laps over the other.
+  const { topMm: cutT, bottomMm: cutB, leftMm: cutL, rightMm: cutR } = profile.margins.cut;
+  const cutW = W + cutL + cutR;
+  const cutH = H + cutT + cutB;
+
   const pad = 18;
-  const totalW = W + bleed * 2 + pad * 2;
+  const totalW = cutW + pad * 2;
   // Extra height below the artwork for the legend panel.
-  const legendH = 78;
-  const totalH = H + bleed * 2 + pad * 2 + legendH;
-  const ox = pad + bleed;
-  const oy = pad + bleed;
+  const legendH = 70;
+  const totalH = cutH + pad * 2 + legendH;
+  const ox = pad + cutL;
+  const oy = pad + cutT;
 
   const label = (x: number, y: number, text: string, anchor = 'start', size = 3, fill = '#64748b') =>
     `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-family="monospace" font-size="${size}" fill="${fill}" text-anchor="${anchor}">${text}</text>`;
 
   const legendPanel = (
-    x: number, y: number, w: number, p: CupProfile,
-    bl: number, st: number, sb: number, ss: number, ov: number, ratio: number,
+    x: number, y: number, w: number, _p: CupProfile,
+    st: number, sb: number, ss: number, ratio: number,
   ): string => {
     const rows: [string, string, string, string][] = [
       // swatch style, name, measurement, what it means
       ['stroke="#db2777" stroke-width="0.7" stroke-dasharray="2.2 1.2"',
-        'BLEED', `${bl}mm outside trim`,
-        'Extend any artwork that touches an edge all the way to this line. Trimming is never exact; bleed stops a white sliver appearing.'],
+        'CUT', `${cutT}mm top / ${cutB}mm base / ${cutL}mm left / ${cutR}mm right`,
+        'Where the blank is die-cut. Artwork meant to reach an edge must run all the way to this line — cutting is never exact, and stopping at trim leaves a white sliver.'],
       ['stroke="#0f172a" stroke-width="0.9"',
         'TRIM', `${W.toFixed(1)} x ${H.toFixed(1)}mm`,
-        'The finished cup wall. This is where the blank is actually cut.'],
+        'The finished cup wall: what is still showing once the cup is formed. The blank itself is bigger — see CUT.'],
       ['stroke="#0284c7" stroke-width="0.7" stroke-dasharray="1.4 1.4"',
         'SAFE AREA', `${st}mm top / ${sb}mm base / ${ss}mm sides`,
         'Keep logos and text inside this box. Anything outside risks being lost in the rim curl, the base, or the glued seam.'],
-      ['stroke="#16a34a" stroke-width="0.9"',
-        'SEAM OVERLAP', `${ov}mm, both edges`,
-        'The glued lap. Artwork here is hidden on the finished cup, but must still be filled so no gap shows at the join.'],
       ['stroke="#94a3b8" stroke-width="0.6" stroke-dasharray="1.6 1.6"',
         'CENTRE LINE', 'opposite the seam',
         'The point facing a person holding the cup. Best place for a logo.'],
@@ -100,19 +102,22 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
      Design space (the unrolled cup). 1:1 millimetres.
 
        Artwork area (trim) : ${W.toFixed(2)} x ${H.toFixed(2)} mm
-       With bleed          : ${(W + bleed * 2).toFixed(2)} x ${(H + bleed * 2).toFixed(2)} mm
-       Bleed               : ${bleed} mm on all edges
+       Blank (to the cut)  : ${cutW.toFixed(2)} x ${cutH.toFixed(2)} mm
+       Cut line            : ${cutT}mm top, ${cutB}mm base, ${cutL}mm left, ${cutR}mm right
        Safe area           : ${safeT}mm top, ${safeB}mm bottom, ${safeS}mm from each seam edge
-       Seam / glue overlap : ${overlap} mm
 
      HOW TO USE
-       1. Place artwork inside the BLEED rectangle. Anything meant to reach
-          the edge must extend to the bleed line, not stop at trim.
+       1. Place artwork inside the CUT rectangle. Anything meant to reach the
+          edge must extend to the cut line, not stop at trim.
        2. Keep logos and text inside the SAFE rectangle.
        3. The LEFT and RIGHT edges are the same place on the cup - the glue
-          seam. Artwork must line up across them, and anything in the green
-          overlap strip is hidden under the glued lap.
+          seam. Artwork must line up across them.
        4. Export as PNG/SVG at this exact aspect ratio and upload.
+
+     THE CUT IS NOT SYMMETRIC
+       The blank is bigger than the finished cup, and by different amounts on
+       each edge. The base runs ${cutB}mm past the cup because that material is
+       consumed forming the base seam.
 
      THE CUP TAPERS
        This rectangle is the cup wall unrolled by ANGLE, so horizontal
@@ -128,14 +133,14 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
      viewBox="0 0 ${totalW.toFixed(4)} ${totalH.toFixed(4)}">
 
   <g id="ARTWORK">
-    <!-- Put artwork in this layer. Fill the bleed rectangle below. -->
-    <rect x="${(ox - bleed).toFixed(3)}" y="${(oy - bleed).toFixed(3)}"
-          width="${(W + bleed * 2).toFixed(3)}" height="${(H + bleed * 2).toFixed(3)}" fill="#ffffff"/>
+    <!-- Put artwork in this layer. Fill the cut rectangle below. -->
+    <rect x="${(ox - cutL).toFixed(3)}" y="${(oy - cutT).toFixed(3)}"
+          width="${cutW.toFixed(3)}" height="${cutH.toFixed(3)}" fill="#ffffff"/>
   </g>
 
   <g id="GUIDES" fill="none">
-    <rect x="${(ox - bleed).toFixed(3)}" y="${(oy - bleed).toFixed(3)}"
-          width="${(W + bleed * 2).toFixed(3)}" height="${(H + bleed * 2).toFixed(3)}"
+    <rect x="${(ox - cutL).toFixed(3)}" y="${(oy - cutT).toFixed(3)}"
+          width="${cutW.toFixed(3)}" height="${cutH.toFixed(3)}"
           stroke="#db2777" stroke-width="0.3" stroke-dasharray="3 1.5"/>
     <rect x="${ox.toFixed(3)}" y="${oy.toFixed(3)}"
           width="${W.toFixed(3)}" height="${H.toFixed(3)}"
@@ -144,29 +149,21 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
           width="${(W - safeS * 2).toFixed(3)}" height="${(H - safeT - safeB).toFixed(3)}"
           stroke="#0284c7" stroke-width="0.3" stroke-dasharray="1.5 1.5"/>
 
-    <!-- Glue overlap: hidden under the lap on the finished cup. -->
-    <rect x="${ox.toFixed(3)}" y="${oy.toFixed(3)}"
-          width="${overlap.toFixed(3)}" height="${H.toFixed(3)}"
-          fill="rgba(22,163,74,0.18)" stroke="#16a34a" stroke-width="0.25"/>
-    <rect x="${(ox + W - overlap).toFixed(3)}" y="${oy.toFixed(3)}"
-          width="${overlap.toFixed(3)}" height="${H.toFixed(3)}"
-          fill="rgba(22,163,74,0.18)" stroke="#16a34a" stroke-width="0.25"/>
-
     <!-- Centre line: the point opposite the seam, facing the customer. -->
     <line x1="${(ox + W / 2).toFixed(3)}" y1="${oy.toFixed(3)}"
           x2="${(ox + W / 2).toFixed(3)}" y2="${(oy + H).toFixed(3)}"
           stroke="#94a3b8" stroke-width="0.2" stroke-dasharray="2 2"/>
 
-    ${label(ox, oy - bleed - 4.5, `${profile.displayName}  -  artwork template  -  1:1 mm`, 'start', 4, '#0f172a')}
-    ${label(ox, oy - bleed - 1.2, `trim ${W.toFixed(2)} x ${H.toFixed(2)}mm   |   full bleed ${(W + bleed * 2).toFixed(2)} x ${(H + bleed * 2).toFixed(2)}mm`)}
-    ${label(ox + W / 2, oy + H + bleed + 4.5, 'CENTRE  (faces the customer)', 'middle')}
-    ${label(ox + 1, oy + H + bleed + 4.5, 'SEAM', 'start', 3, '#16a34a')}
-    ${label(ox + W - 1, oy + H + bleed + 4.5, 'SEAM', 'end', 3, '#16a34a')}
+    ${label(ox, oy - cutT - 4.5, `${profile.displayName}  -  artwork template  -  1:1 mm`, 'start', 4, '#0f172a')}
+    ${label(ox, oy - cutT - 1.2, `trim ${W.toFixed(2)} x ${H.toFixed(2)}mm   |   blank to the cut ${cutW.toFixed(2)} x ${cutH.toFixed(2)}mm`)}
+    ${label(ox + W / 2, oy + H + cutB + 4.5, 'CENTRE  (faces the customer)', 'middle')}
+    ${label(ox + 1, oy + H + cutB + 4.5, 'SEAM', 'start', 3, '#16a34a')}
+    ${label(ox + W - 1, oy + H + cutB + 4.5, 'SEAM', 'end', 3, '#16a34a')}
   </g>
 
   <g id="LEGEND">
     <!-- Delete this layer along with GUIDES before exporting artwork. -->
-    ${legendPanel(ox, oy + H + bleed + 10, W, profile, bleed, safeT, safeB, safeS, overlap, bottomRatio)}
+    ${legendPanel(ox, oy + H + cutB + 10, W, profile, safeT, safeB, safeS, bottomRatio)}
   </g>
 </svg>`;
 }
