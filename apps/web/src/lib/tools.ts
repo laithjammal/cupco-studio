@@ -2,6 +2,7 @@
  * Small editing tools: colour picking and fitting artwork to the template.
  */
 
+import { boundaryURange, boundaryVRange } from '@cupco/geometry';
 import type { CupProfile, FrustumGeometry } from '@cupco/geometry';
 import { halfExtent, type Design, type DesignElement } from './design';
 
@@ -77,33 +78,30 @@ export function fillToTemplate(
   const cw = profile.designCanvas.widthPx;
   const ch = profile.designCanvas.heightPx;
 
-  // Target extents in design space.
-  let uSpan: number, vSpan: number, vCentre: number;
+  // Target extents in design space, taken from the boundary itself rather
+  // than by dividing millimetres by an arc length.
+  //
+  // That shortcut is wrong in a way that only shows near the base. Design u is
+  // ANGULAR, so a fixed mm offset from the seam is a larger fraction of u at
+  // the base than at the rim - and the old code measured only at the rim.
+  // "Fill to bleed" therefore stopped 2.9mm inside the blank on each side, and
+  // "fit to safe" left artwork 1.0mm OUTSIDE the safe area, which is the
+  // dangerous direction.
+  const u = boundaryURange(profile, geom, mode === 'bleed' ? 'bleed' : 'safe');
+  const v = boundaryVRange(profile, geom, mode === 'bleed' ? 'bleed' : 'safe');
 
-  if (mode === 'bleed') {
-    // Asymmetric, so convert each edge through the derived geometry rather
-    // than guessing a fraction of the canvas. The centre shifts with it: the
-    // blank is not centred on the cup.
-    const c = profile.margins.cut;
-    const b = profile.margins.bleedMm;
-    // Each seam edge carries two offsets; design space is a rectangle and can
-    // hold one. Take the larger so the fill covers the blank at both ends.
-    const leftU = (Math.max(c.left.atTopMm, c.left.atBottomMm) + b) / geom.topArcMm;
-    const rightU = (Math.max(c.right.atTopMm, c.right.atBottomMm) + b) / geom.topArcMm;
-    const topV = (c.topMm + b) / geom.slantMm;
-    const botV = (c.bottomMm + b) / geom.slantMm;
-    uSpan = 1 + leftU + rightU;
-    vSpan = 1 + topV + botV;
-    // v points UP, so the bottom cut extends below v=0.
-    vCentre = (1 + topV - botV) / 2;
-  } else {
-    const topV = profile.margins.safeTopMm / geom.slantMm;
-    const botV = profile.margins.safeBottomMm / geom.slantMm;
-    const seamU = profile.margins.safeSeamMm / geom.topArcMm;
-    uSpan = 1 - seamU * 2;
-    vSpan = 1 - topV - botV;
-    vCentre = botV + vSpan / 2;
-  }
+  // COVER takes the widest reading of the boundary, CONTAIN the narrowest.
+  const uLeft = mode === 'bleed'
+    ? Math.min(u.atTop.uLeft, u.atBottom.uLeft)
+    : Math.max(u.atTop.uLeft, u.atBottom.uLeft);
+  const uRight = mode === 'bleed'
+    ? Math.max(u.atTop.uRight, u.atBottom.uRight)
+    : Math.min(u.atTop.uRight, u.atBottom.uRight);
+
+  const uSpan = uRight - uLeft;
+  const vSpan = v.vTop - v.vBottom;
+  const uCentre = (uLeft + uRight) / 2;
+  const vCentre = (v.vBottom + v.vTop) / 2;
 
   // Current unrotated extents, at the element's present size.
   const cur = halfExtent(el, cw, ch, undefined);
@@ -117,12 +115,15 @@ export function fillToTemplate(
     ? Math.max(uSpan / curU, vSpan / curV)
     : Math.min(uSpan / curU, vSpan / curV);
 
-  const patch: Record<string, unknown> = { u: 0.5, v: vCentre, rotation: 0 };
+  const patch: Record<string, unknown> = { u: uCentre, v: vCentre, rotation: 0 };
   if (el.type === 'image' || el.type === 'vector' || el.type === 'qr') {
     patch.widthU = Math.max(0.02, Math.min(6, el.widthU * ratio));
   } else if (el.type === 'band') {
-    // Already full width; filling means taking the full printable height.
-    patch.heightV = Math.max(0.01, Math.min(1, vSpan));
+    // Already full width; filling means taking the full height of the target.
+    // NOT clamped to 1: the blank is taller than the cup, so filling to the
+    // bleed needs heightV ~1.37. Clamping to 1 stopped a band 31.7mm short of
+    // the blank - it reached the trim and no further.
+    patch.heightV = Math.max(0.01, Math.min(3, vSpan));
   } else {
     patch.sizeV = Math.max(0.015, Math.min(2, el.sizeV * ratio));
   }

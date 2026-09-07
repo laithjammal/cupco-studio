@@ -202,6 +202,36 @@ export function boundaryVRange(
   };
 }
 
+/**
+ * How much DESIGN SPACE a boundary covers horizontally - at EACH arc.
+ *
+ * Two answers, not one, and the difference is not rounding. Design u is
+ * ANGULAR: u=0..1 is one turn of the cup at any height. The blank's seam
+ * offsets are linear millimetres. The base circumference is smaller than the
+ * rim's, so the same 5mm out from the seam is a LARGER fraction of u at the
+ * base than at the top - 2.9mm worth, on the 8oz.
+ *
+ * So a caller has to say what it wants:
+ *   - to COVER the boundary everywhere, take the wider of the two
+ *   - to STAY INSIDE it everywhere, take the narrower
+ *
+ * Collapsing this to a single number computed at the rim is what let "fill to
+ * bleed" stop short of the blank near the base, and "fit to safe" leave
+ * artwork outside the safe area there.
+ */
+export function boundaryURange(
+  profile: CupProfile,
+  geom: FrustumGeometry,
+  boundary: FanBoundary,
+): { atTop: { uLeft: number; uRight: number }; atBottom: { uLeft: number; uRight: number } } {
+  const { corners } = buildFanOutline(profile, geom, boundary, 8);
+  const u = (p: Point2) => Math.atan2(p.x, -p.y) / geom.sectorAngleRad + 0.5;
+  return {
+    atTop: { uLeft: u(corners.outerLeft), uRight: u(corners.outerRight) },
+    atBottom: { uLeft: u(corners.innerLeft), uRight: u(corners.innerRight) },
+  };
+}
+
 /** Axis-aligned bounds of a set of fan-space points. */
 export function fanBounds(points: readonly Point2[]): FanBounds {
   if (points.length === 0) throw new Error('fanBounds: no points');
