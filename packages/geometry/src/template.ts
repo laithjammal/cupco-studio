@@ -89,12 +89,9 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
       ['stroke="#db2777" stroke-width="0.9"',
         'CUT', `${cutT}mm top / ${cutB}mm base / ${cutL}mm left / ${cutR}mm right`,
         'The real blank, measured off the manufacturer\u2019s die drawing. This is where the die falls \u2014 the actual size and shape of the flat fan before it is formed.'],
-      ['stroke="#0f172a" stroke-width="0.9"',
-        'ARTWORK AREA', `${W.toFixed(1)} x ${H.toFixed(1)}mm`,
-        'The cup wall unrolled, and the rectangle your artwork must match. It is NOT the outer edge \u2014 the blank is bigger at every edge, see CUT.'],
       ['stroke="#0284c7" stroke-width="0.7" stroke-dasharray="1.4 1.4"',
         'SAFE AREA', safeDesc,
-        'Keep logos and text inside this box. Note it sits OUTSIDE the artwork area top and bottom: printing runs into the rim curl and the base on purpose.'],
+        'Keep logos and text inside this box. It sits slightly OUTSIDE the cup wall at the rim and the base, which is deliberate: printing runs into the curl, and the curl rolls outward and stays visible.'],
       ['stroke="#94a3b8" stroke-width="0.6" stroke-dasharray="1.6 1.6"',
         'CENTRE LINE', 'opposite the seam',
         'The point facing a person holding the cup. Best place for a logo.'],
@@ -131,7 +128,8 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
      ===================================================================
      Design space (the unrolled cup). 1:1 millimetres.
 
-       Artwork area        : ${W.toFixed(2)} x ${H.toFixed(2)} mm   (the cup wall unrolled)
+       Artwork area        : ${W.toFixed(2)} x ${H.toFixed(2)} mm   (the cup wall unrolled;
+                             a measurement, not a drawn line - see below)
        Blank (to the cut)  : ${cutW.toFixed(2)} x ${cutH.toFixed(2)} mm
        Cut line            : ${cutT}mm top, ${cutB}mm base, ${cutL}mm left, ${cutR}mm right
        With bleed          : ${bleedW.toFixed(2)} x ${bleedH.toFixed(2)} mm (${bl}mm outside the cut)
@@ -156,10 +154,17 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
        the cup differs at the top and the bottom; this template is a rectangle
        and takes the LARGER of the two, so it covers the blank everywhere.
 
-     THE SAFE AREA CAN SIT OUTSIDE THE ARTWORK AREA
-       Printing deliberately runs past the cup's wall at the rim and the base -
-       the curl rolls outward and stays visible - so the blue rectangle is
-       taller than the black one. That is not a drawing error.
+     WHY THERE IS NO LINE FOR THE ARTWORK AREA
+       Three lines are drawn, and each one is something you act on: where the
+       die falls (CUT), how far ink must run past it (BLEED), and where
+       artwork is guaranteed to survive (SAFE). The cup wall's own outline sat
+       between them and was acted on by nobody - worse, it read as the outer
+       edge of the sheet, which it is not. Its size is stated above; work to
+       the three lines.
+
+       One consequence to expect: the SAFE rectangle is TALLER than the cup
+       wall, because printing deliberately runs past it at the rim and the
+       base - the curl rolls outward and stays visible.
 
      THE CUP TAPERS
        This rectangle is the cup wall unrolled by ANGLE, so horizontal
@@ -187,16 +192,15 @@ export function buildArtworkTemplateSvg(profile: CupProfile): string {
     <rect x="${(ox - cutL).toFixed(3)}" y="${(oy - cutT).toFixed(3)}"
           width="${cutW.toFixed(3)}" height="${cutH.toFixed(3)}"
           stroke="#db2777" stroke-width="0.45"/>
-    <rect x="${ox.toFixed(3)}" y="${oy.toFixed(3)}"
-          width="${W.toFixed(3)}" height="${H.toFixed(3)}"
-          stroke="#0f172a" stroke-width="0.45"/>
     <rect x="${(ox + safeS).toFixed(3)}" y="${(oy + safeT).toFixed(3)}"
           width="${(W - safeS * 2).toFixed(3)}" height="${(H - safeT - safeB).toFixed(3)}"
           stroke="#0284c7" stroke-width="0.3" stroke-dasharray="1.5 1.5"/>
 
-    <!-- Centre line: the point opposite the seam, facing the customer. -->
-    <line x1="${(ox + W / 2).toFixed(3)}" y1="${oy.toFixed(3)}"
-          x2="${(ox + W / 2).toFixed(3)}" y2="${(oy + H).toFixed(3)}"
+    <!-- Centre line: the point opposite the seam, facing the customer.
+         Runs the full height of the blank now that the artwork-area
+         rectangle it used to stop against is no longer drawn. -->
+    <line x1="${(ox + W / 2).toFixed(3)}" y1="${(oy - cutT).toFixed(3)}"
+          x2="${(ox + W / 2).toFixed(3)}" y2="${(oy + H + cutB).toFixed(3)}"
           stroke="#94a3b8" stroke-width="0.2" stroke-dasharray="2 2"/>
 
     ${label(ox, oy - cutT - bl - 4.5, `${profile.displayName}  -  artwork template  -  1:1 mm`, 'start', 4, '#0f172a')}

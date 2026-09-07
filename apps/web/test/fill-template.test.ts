@@ -13,6 +13,7 @@ import {
   CUP_8OZ, deriveFrustum, boundaryURange, boundaryVRange, designToFan, buildFanOutline,
 } from '@cupco/geometry';
 import { fillToTemplate, type FillMode } from '../src/lib/tools';
+import { halfExtent } from '../src/lib/design';
 import type { DesignElement } from '../src/lib/design';
 
 const geom = deriveFrustum(CUP_8OZ.dimensions);
@@ -20,7 +21,7 @@ const geom = deriveFrustum(CUP_8OZ.dimensions);
 // fillToTemplate returns a Partial over a UNION of element types, so the
 // per-type fields are not reachable through it. These name what the patch is
 // asserted to carry, at the one place the cast lives.
-type Patch = Partial<Record<'u' | 'v' | 'widthU' | 'heightV' | 'sizeV', number>>;
+type Patch = Partial<Record<'u' | 'v' | 'widthU' | 'heightV' | 'sizeV' | 'stretchV', number>>;
 const patch = (e: DesignElement, mode: FillMode): Patch =>
   fillToTemplate(e, CUP_8OZ, geom, mode) as Patch;
 
@@ -132,33 +133,59 @@ describe('fit to safe area', () => {
  * axis at a time was not expressible, and it is the common case.
  */
 describe('single-axis bleed', () => {
-  it('bleed-h reaches both seam edges and leaves v alone', () => {
+  /**
+   * The measured HEIGHT has to be unchanged, not merely the absence of a
+   * field in the patch. Artwork is sized by width alone - height follows as
+   * widthU * aspect * stretchV - so the first version of this changed widthU
+   * and silently resized the other axis too. Asserting `p.v === undefined`
+   * passed while the element visibly grew.
+   */
+  const sizeOf = (el: DesignElement, p: Patch) => {
+    const merged = { ...el, ...p } as DesignElement;
+    const h = halfExtent(merged, CUP_8OZ.designCanvas.widthPx, CUP_8OZ.designCanvas.heightPx);
+    return { w: h.du * 2, h: h.dv * 2 };
+  };
+
+  it('bleed-h reaches both seam edges and leaves the HEIGHT alone', () => {
     const before = box({ v: 0.32 });
     const p = patch(before, 'bleed-h');
     const u = boundaryURange(CUP_8OZ, geom, 'bleed');
     const halfU = p.widthU! / 2;
     expect(p.u! - halfU).toBeLessThanOrEqual(Math.min(u.atTop.uLeft, u.atBottom.uLeft) + 1e-9);
     expect(p.u! + halfU).toBeGreaterThanOrEqual(Math.max(u.atTop.uRight, u.atBottom.uRight) - 1e-9);
-    // The whole point: it must not move vertically.
     expect(p.v).toBeUndefined();
+    expect(sizeOf(before, p).h).toBeCloseTo(sizeOf(before, {}).h, 9);
   });
 
-  it('bleed-v reaches the rim and the base and leaves u alone', () => {
-    const p = patch(box({ u: 0.2 }), 'bleed-v');
+  it('bleed-v reaches the rim and the base and leaves the WIDTH alone', () => {
+    const before = box({ u: 0.2 });
+    const p = patch(before, 'bleed-v');
     expect(p.u).toBeUndefined();
+    expect(p.widthU).toBeUndefined();
     const v = boundaryVRange(CUP_8OZ, geom, 'bleed');
     expect(p.v!).toBeCloseTo((v.vBottom + v.vTop) / 2, 9);
+    expect(sizeOf(before, p).w).toBeCloseTo(sizeOf(before, {}).w, 9);
+    // And it really did reach top and bottom.
+    expect(sizeOf(before, p).h).toBeCloseTo(v.vTop - v.vBottom, 6);
   });
 
-  it('each axis mode scales less than filling both, which has to overshoot', () => {
+  it('bleed-h reaches the edges even when the element is already stretched', () => {
+    const before = box({ stretchV: 3 });
+    const p = patch(before, 'bleed-h');
+    const u = boundaryURange(CUP_8OZ, geom, 'bleed');
+    expect(sizeOf(before, p).w)
+      .toBeCloseTo(Math.max(u.atTop.uRight, u.atBottom.uRight)
+        - Math.min(u.atTop.uLeft, u.atBottom.uLeft), 6);
+    expect(sizeOf(before, p).h).toBeCloseTo(sizeOf(before, {}).h, 9);
+  });
+
+  it('filling both axes covers, so it is at least as wide as the width-only fill', () => {
     const both = patch(box(), 'bleed');
     const h = patch(box(), 'bleed-h');
-    const v = patch(box(), 'bleed-v');
     expect(both.widthU!).toBeGreaterThanOrEqual(h.widthU!);
-    expect(both.widthU!).toBeGreaterThanOrEqual(v.widthU!);
-    // A square box on a blank wider than it is tall bleeds sideways at a
-    // smaller scale than it bleeds top-to-bottom.
-    expect(h.widthU).not.toBeCloseTo(v.widthU!, 6);
+    // And filling both leaves the natural proportions alone - it scales to
+    // cover and overshoots, rather than distorting to fit.
+    expect(both.stretchV).toBeUndefined();
   });
 
   it('a band ignores bleed-h — it already wraps the whole circumference', () => {

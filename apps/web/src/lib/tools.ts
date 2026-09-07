@@ -77,6 +77,8 @@ export type FillMode = 'bleed' | 'bleed-h' | 'bleed-v' | 'safe';
  * either gaps or a much larger scale, and silently doing the latter would be
  * surprising.
  */
+const clampStretch = (v: number) => Math.max(0.05, Math.min(20, v));
+
 export function fillToTemplate(
   el: DesignElement,
   profile: CupProfile,
@@ -135,7 +137,23 @@ export function fillToTemplate(
   if (mode !== 'bleed-h') patch.v = vCentre;
 
   if (el.type === 'image' || el.type === 'vector' || el.type === 'qr') {
-    patch.widthU = Math.max(0.02, Math.min(6, el.widthU * ratio));
+    // Artwork is sized by WIDTH, with height following as
+    // widthU * aspect * stretchV. So widthU alone moves both axes at once,
+    // and a single-axis fill has to correct the other one deliberately -
+    // otherwise "bleed across" also grew the height, and "bleed down" applied
+    // its ratio to the width. Same arithmetic as an edge-handle drag.
+    const stretch = el.stretchV ?? 1;
+    if (mode === 'bleed-v') {
+      // Height only: leave widthU exactly as it was.
+      patch.stretchV = clampStretch(stretch * ratio);
+    } else {
+      const widthU = Math.max(0.02, Math.min(6, el.widthU * ratio));
+      patch.widthU = widthU;
+      if (mode === 'bleed-h') {
+        // Undo the height change the width change would otherwise cause.
+        patch.stretchV = clampStretch(stretch / (widthU / el.widthU));
+      }
+    }
   } else if (el.type === 'band') {
     // A band already spans the full circumference and wraps through the seam,
     // so it bleeds sideways whatever its width says. Only its height is worth
@@ -147,6 +165,9 @@ export function fillToTemplate(
     if (mode === 'bleed-h') return { rotation: 0 } as Partial<DesignElement>;
     patch.heightV = Math.max(0.01, Math.min(3, vSpan));
   } else {
+    // Text has ONE size, so a single-axis fill scales the type to fit that
+    // axis and the other follows. Stretching glyphs to fill a box is a
+    // different thing, and not something to do behind the user's back.
     patch.sizeV = Math.max(0.015, Math.min(2, el.sizeV * ratio));
   }
   return patch as Partial<DesignElement>;

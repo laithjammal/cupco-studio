@@ -103,12 +103,26 @@ describe('artwork template — the file must actually open', () => {
 
   it('the legend explains every guide line that is drawn', () => {
     const svg = buildArtworkTemplateSvg(CUP_8OZ);
-    // 'ARTWORK AREA' rather than 'TRIM': in this template that rectangle is
-    // the thing a designer has to match, and calling it trim invited it to be
-    // read as the outer edge of the sheet.
-    for (const term of ['BLEED', 'CUT', 'ARTWORK AREA', 'SAFE AREA', 'CENTRE LINE']) {
+    for (const term of ['BLEED', 'CUT', 'SAFE AREA', 'CENTRE LINE']) {
       expect(svg).toContain(term);
     }
+  });
+
+  /**
+   * The cup wall's own outline is no longer drawn. Every remaining line is
+   * one somebody acts on; the wall's outline sat between them being acted on
+   * by nobody, and read as the outer edge of the sheet, which it is not.
+   */
+  it('draws no line for the artwork area, and says so', () => {
+    const svg = buildArtworkTemplateSvg(CUP_8OZ);
+    // The heading below mentions the phrase, so match the legend ROW itself:
+    // a bold label immediately closing its <text> element.
+    expect(svg).not.toContain('>ARTWORK AREA</text>');
+    expect(svg).toContain('WHY THERE IS NO LINE FOR THE ARTWORK AREA');
+    // Its size is still stated - it is what a design has to be exported at.
+    expect(svg).toContain('Artwork area');
+    // Three guide rectangles remain: bleed, cut, safe.
+    expect((svg.match(/<rect /g) ?? []).length).toBe(5); // 3 guides + artwork fill + legend panel
   });
 
   /**
