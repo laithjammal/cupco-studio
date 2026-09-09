@@ -267,3 +267,33 @@ describe('confirmed 8oz margin values', () => {
     expect(g.rTopMm).toBeCloseTo(341.2523, 3);
   });
 });
+
+/**
+ * The design canvas has to carry the profile's dpi on BOTH axes.
+ *
+ * Design space is normalised, so a canvas whose height is at a different
+ * resolution from its width stretches every placed image and every motif by
+ * the ratio between them - and nothing on screen looks wrong, because the
+ * screen is normalised too. It only shows on the printed cup.
+ *
+ * The 8oz carried 1069px for a long time: 300dpi against the 90mm height it
+ * used to hold. Correcting the body height to 85.76mm left the canvas stale,
+ * and everything on the cup was printing 4.9% wider than drawn.
+ */
+describe('design canvas resolution', () => {
+  it.each(BUILT_IN_PROFILES.map((p) => [p.id, p] as const))(
+    '%s carries its own dpi on both axes',
+    (_id, profile) => {
+      const g = deriveFrustum(profile.dimensions);
+      const { widthPx, heightPx, dpi } = profile.designCanvas;
+      const perMm = dpi / 25.4;
+      expect(widthPx).toBeCloseTo(g.topArcMm * perMm, -0.5);
+      expect(heightPx).toBeCloseTo(g.slantMm * perMm, -0.5);
+      // And the two axes agree with each other, which is the thing that
+      // actually matters: a shared error would still print correctly.
+      const across = widthPx / g.topArcMm;
+      const down = heightPx / g.slantMm;
+      expect(Math.abs(across / down - 1)).toBeLessThan(0.005);
+    },
+  );
+});

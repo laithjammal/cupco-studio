@@ -13,8 +13,21 @@
 
 import type { CupProfile, Provenance } from './types';
 
-/** Design canvas at 300dpi sized to comfortably cover the 8oz developed area. */
-const DEFAULT_CANVAS = { widthPx: 2732, heightPx: 1069, dpi: 300 } as const;
+/**
+ * Design canvas for the 8oz, at 300dpi.
+ *
+ * BOTH axes have to be the profile's own dpi, not just the width. Design space
+ * is normalised, so if the height carries a different resolution from the
+ * width, every placed image and every motif prints stretched by the ratio
+ * between them - silently, because nothing on screen looks wrong.
+ *
+ * This carried 1069px for a long time, which was 300dpi against the 90mm
+ * height the profile used to hold. When that was corrected to the real 85.76mm
+ * body, the canvas was not, and everything placed on the cup was printing 4.9%
+ * wider than it should. A test now checks every profile against its own
+ * geometry.
+ */
+const DEFAULT_CANVAS = { widthPx: 2732, heightPx: 1019, dpi: 300 } as const;
 
 /**
  * 8oz single wall.
@@ -189,7 +202,7 @@ export const CUP_12OZ: CupProfile = {
   },
   seam: { positionRad: Math.PI, overlapMm: 5.0, visibleStartOffsetMm: 5.0 },
   designSpaceMode: 'angular',
-  designCanvas: { widthPx: 3340, heightPx: 1311, dpi: 300 },
+  designCanvas: { widthPx: 3339, heightPx: 1311, dpi: 300 },
   exportDpi: 300,
 };
 
@@ -220,7 +233,7 @@ export const CUP_16OZ: CupProfile = {
   },
   seam: { positionRad: Math.PI, overlapMm: 5.0, visibleStartOffsetMm: 5.0 },
   designSpaceMode: 'angular',
-  designCanvas: { widthPx: 3340, heightPx: 1608, dpi: 300 },
+  designCanvas: { widthPx: 3339, heightPx: 1604, dpi: 300 },
   exportDpi: 300,
 };
 
