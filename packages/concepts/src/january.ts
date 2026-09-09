@@ -21,7 +21,7 @@ import { harmonise } from './harmonise';
 import {
   type ConceptInput, type ConceptLayout, type ConceptStrategy, type Placement,
 } from './types';
-import { boundaryURange } from '@cupco/geometry';
+import { boundaryURange, boundaryVRange } from '@cupco/geometry';
 
 /**
  * The template's own geometry, mirrored from apps/web's template-art.ts.
@@ -56,29 +56,38 @@ export const january: ConceptStrategy = {
     const { widthPx, heightPx } = input.profile.designCanvas;
     const canvasRatio = widthPx / heightPx;
 
-    // Sized to the VISIBLE CUP WALL, not to the blank.
+    // Sized to fill the BLEED BOX exactly - every edge of the die reached,
+    // and none of them overrun.
     //
-    // The blank is 118mm tall against an 85.8mm cup: the die's top curl,
-    // base tuck and bleed together add 37%. So artwork drawn to fill the
-    // blank edge-to-edge only shows its middle 73% once the cup is made -
-    // it reads as far too big, with the sky and the hills cut away.
+    // Both halves of that matter. Fall short and paper shows at a trimmed
+    // edge; overrun and the ink lands outside the blank, which on an imposed
+    // sheet means on the neighbouring cup. The raster export clips to the
+    // outline, but the vector export does not, so overhang is a real defect
+    // rather than a cosmetic one.
     //
-    // Fitting the illustration's HEIGHT to v 0..1 puts the whole of it on
-    // the part of the cup a person actually sees. The width that leaves
-    // over is filled by the design's own background, which is the artwork's
-    // cream - so the join is invisible and there is no white sliver to
-    // bleed against.
+    // The centring is taken from the BLANK, not from the cup. The die is
+    // asymmetric - the base tuck takes 17.7mm against the top curl's 14.0mm
+    // - so a design centred on the visible wall sits 0.02 short at the
+    // bottom while overhanging the top. Scaling up to close that gap pushes
+    // 3.7mm past the bleed at the seam edges; shifting to the blank's own
+    // centre closes it for nothing. The composition lands 2.9mm below the
+    // middle of the visible wall as a result, which is the cheaper price.
+    //
+    // Matching the width leaves the height 0.39% proud - 0.17mm at each arc,
+    // inside the trim tolerance and clipped by the raster in any case.
     const bleedU = boundaryURange(input.profile, input.geom, 'bleed');
-    const centreU = (Math.min(bleedU.atTop.uLeft, bleedU.atBottom.uLeft)
-      + Math.max(bleedU.atTop.uRight, bleedU.atBottom.uRight)) / 2;
-    const centreV = 0.5;
+    const bleedV = boundaryVRange(input.profile, input.geom, 'bleed');
+    const uLeft = Math.min(bleedU.atTop.uLeft, bleedU.atBottom.uLeft);
+    const uRight = Math.max(bleedU.atTop.uRight, bleedU.atBottom.uRight);
 
-    const heightV = 1;
-    const widthU = heightV / (TEMPLATE.aspect * canvasRatio);
+    const widthU = uRight - uLeft;
+    const heightV = widthU * TEMPLATE.aspect * canvasRatio;
+    const centreU = (uLeft + uRight) / 2;
+    const centreV = (bleedV.vBottom + bleedV.vTop) / 2;
 
     const placements: Placement[] = [{
       kind: 'template', template: TEMPLATE.id, color: accent,
-      u: centreU, v: centreV, rotation: 0, widthU,
+      u: centreU, v: centreV, rotation: 0, widthU, bleeds: true,
     }];
 
     // The disc, carried from image coordinates onto the cup.

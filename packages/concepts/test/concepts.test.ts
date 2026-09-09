@@ -6,7 +6,7 @@ import {
   type ConceptInput, type BrandColour,
 } from '../src/index';
 import { hexToRgb, motifAspect, type RGB, type MotifId } from '@cupco/vector';
-import { boundaryURange } from '@cupco/geometry';
+import { boundaryURange, boundaryVRange } from '@cupco/geometry';
 
 const geom = deriveFrustum(CUP_8OZ.dimensions);
 
@@ -517,47 +517,80 @@ describe('January template', () => {
   });
 
   /**
-   * Fitted to the VISIBLE CUP, not to the blank.
+   * Reaching EVERY edge of the die. Any edge the artwork falls short of
+   * shows paper once the blank is trimmed.
    *
-   * The blank is 37% taller than the cup wall - top curl, base tuck and
-   * bleed. Artwork drawn edge to edge on the blank therefore shows only its
-   * middle 73% once the cup is made, which reads as far too big. So the
-   * illustration's HEIGHT is matched to v 0..1 and the width it leaves over
-   * is filled by the design's own cream background.
+   * Asserted on all four edges rather than on width alone: the die is
+   * asymmetric - the base tuck is deeper than the top curl - so matching the
+   * blank's width leaves the bottom short even though the total height is
+   * sufficient. Measuring only the width passed that bug.
    */
-  it('shows the WHOLE illustration on the visible cup wall', () => {
+  it('covers the bleed box on all four edges', () => {
     const t = tpl(jan(GREEN));
     const { widthPx, heightPx } = CUP_8OZ.designCanvas;
     const heightV = t.widthU! * (848 / 1855) * (widthPx / heightPx);
-    // Not merely "covers the cup" - nothing may be cropped off either end.
-    expect(t.v - heightV / 2).toBeCloseTo(0, 6);
-    expect(t.v + heightV / 2).toBeCloseTo(1, 6);
+    const u = boundaryURange(CUP_8OZ, geom, 'bleed');
+    const v = boundaryVRange(CUP_8OZ, geom, 'bleed');
+    expect(t.u - t.widthU! / 2).toBeLessThanOrEqual(Math.min(u.atTop.uLeft, u.atBottom.uLeft));
+    expect(t.u + t.widthU! / 2).toBeGreaterThanOrEqual(Math.max(u.atTop.uRight, u.atBottom.uRight));
+    expect(t.v - heightV / 2).toBeLessThanOrEqual(v.vBottom);
+    expect(t.v + heightV / 2).toBeGreaterThanOrEqual(v.vTop);
+    expect(t.bleeds).toBe(true);
   });
 
-  it('clears the glue seam on both sides', () => {
-    // The lap hides the last few percent of the circumference. The artwork
-    // carries lettering at its right edge, so it has to finish well short of
-    // the seam rather than merely fit the blank.
+  it('does not run PAST the bleed either', () => {
+    // Overhang is not free: the vector export carries no clip, so ink beyond
+    // the bleed lands outside the blank - on an imposed sheet, on the next
+    // cup. Covering the bleed by scaling up did exactly this, 3.7mm past the
+    // seam edges, and only an assertion on the overrun catches it.
     const t = tpl(jan(GREEN));
-    const left = t.u - t.widthU! / 2;
-    const right = t.u + t.widthU! / 2;
-    const seam = CUP_8OZ.seam.overlapMm / (Math.PI * CUP_8OZ.dimensions.topDiameterMm);
-    expect(left).toBeGreaterThan(seam);
-    expect(right).toBeLessThan(1 - seam);
+    const { widthPx, heightPx } = CUP_8OZ.designCanvas;
+    const heightV = t.widthU! * (848 / 1855) * (widthPx / heightPx);
+    const u = boundaryURange(CUP_8OZ, geom, 'bleed');
+    const v = boundaryVRange(CUP_8OZ, geom, 'bleed');
+    const overU = Math.max(
+      Math.min(u.atTop.uLeft, u.atBottom.uLeft) - (t.u - t.widthU! / 2),
+      (t.u + t.widthU! / 2) - Math.max(u.atTop.uRight, u.atBottom.uRight));
+    const overV = Math.max(v.vBottom - (t.v - heightV / 2), (t.v + heightV / 2) - v.vTop);
+    // Zero at the seams; a sliver at the arcs, well under the 0.5mm that
+    // preflight treats as rounding rather than a mistake.
+    expect(overU).toBeLessThanOrEqual(1e-9);
+    expect(overV * CUP_8OZ.designCanvas.heightPx / CUP_8OZ.designCanvas.dpi * 25.4)
+      .toBeLessThan(0.5);
   });
 
-  it('centres the design on the CUP, not on the blank', () => {
-    // What a person looking at the cup sees should be the middle of the art.
-    expect(tpl(jan(GREEN)).v).toBeCloseTo(0.5, 6);
+  /**
+   * The live area. Filling the blank means the finished cup shows only the
+   * middle 71% of the file, so this pins WHICH rows survive - the number a
+   * template has to be drawn against.
+   */
+  it('shows rows 101 to 720 of the file on the finished cup', () => {
+    const t = tpl(jan(GREEN));
+    const { widthPx, heightPx } = CUP_8OZ.designCanvas;
+    const heightV = t.widthU! * (848 / 1855) * (widthPx / heightPx);
+    const top = t.v + heightV / 2, bottom = t.v - heightV / 2;
+    const croppedTop = (top - 1) / heightV, croppedBottom = (0 - bottom) / heightV;
+    expect(Math.round(croppedTop * 848)).toBe(101);
+    expect(Math.round(848 - croppedBottom * 848)).toBe(720);
+  });
+
+  it('centres the design on the BLANK, not on the visible cup', () => {
+    // The die is asymmetric, so these are not the same point. Registering to
+    // the blank is what makes the bleed exact on both arcs; the cost is that
+    // the composition sits about 3mm below the middle of the visible wall.
+    const v = boundaryVRange(CUP_8OZ, geom, 'bleed');
+    expect(tpl(jan(GREEN)).v).toBeCloseTo((v.vBottom + v.vTop) / 2, 6);
   });
 
   it('puts the mark in the reserved disc, painted LAST', () => {
     const c = jan(GREEN);
     expect(mark(c).kind).toBe('artwork');
     expect(c.placements.filter((p) => p.kind === 'artwork')).toHaveLength(1);
-    // The disc sits a shade left of centre and just below the middle.
+    // A shade left of centre, and below the middle of the visible wall -
+    // partly because the artwork draws it low, partly because registering to
+    // the asymmetric blank carries the whole design down with it.
     expect(mark(c).u).toBeCloseTo(0.4989, 2);
-    expect(mark(c).v).toBeCloseTo(0.4911, 2);
+    expect(mark(c).v).toBeCloseTo(0.466, 2);
     // It is a dark disc, so the mark has to read light on it.
     expect(mark(c).treatment).toEqual({ dropPlate: true, tone: 'lighten' });
   });
