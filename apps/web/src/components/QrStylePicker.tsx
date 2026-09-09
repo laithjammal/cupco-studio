@@ -28,11 +28,13 @@ export default function QrStylePicker({
   url,
   styleId,
   frameId,
+  silhouetteId,
   onChange,
 }: {
   url: string;
   styleId: string;
   frameId: QrFrameId;
+  silhouetteId: QrFrameId;
   onChange: (styleId: string) => void;
 }) {
   const active = getQrStyle(styleId);
@@ -49,7 +51,7 @@ export default function QrStylePicker({
             onClick={() => onChange(preset.id)}
             title={preset.description}
           >
-            <Swatch url={url} styleId={preset.id} frameId={frameId} />
+            <Swatch url={url} styleId={preset.id} frameId={frameId} silhouetteId={silhouetteId} />
             <span className="qrstyle__name">{preset.name}</span>
           </button>
         ))}
@@ -69,47 +71,93 @@ export default function QrStylePicker({
  * artwork has to be placed to keep the modules printable.
  */
 export function QrFramePicker({
-  url, styleId, frameId, onChange,
+  url, styleId, frameId, silhouetteId, onFrame, onSilhouette,
 }: {
   url: string;
   styleId: string;
   frameId: QrFrameId;
-  onChange: (frameId: QrFrameId) => void;
+  silhouetteId: QrFrameId;
+  onFrame: (frameId: QrFrameId) => void;
+  onSilhouette: (id: QrFrameId) => void;
 }) {
-  const active = QR_FRAMES.find((f) => f.id === frameId) ?? QR_FRAMES[0]!;
-  const { codeFraction } = buildQrArtwork(
-    normaliseUrl(url) ?? 'https://example.com', { frame: frameId },
+  // The two are alternatives, not layers: a shape is either the ground the
+  // code sits on, or the code itself.
+  const asCode = silhouetteId !== 'none';
+  const chosen = asCode ? silhouetteId : frameId;
+  const apply = asCode ? onSilhouette : onFrame;
+  const active = QR_FRAMES.find((f) => f.id === chosen) ?? QR_FRAMES[0]!;
+
+  const { codeFraction, minModuleScale } = buildQrArtwork(
+    normaliseUrl(url) ?? 'https://example.com',
+    asCode
+      ? { silhouette: silhouetteId, level: 'H' }
+      : { frame: frameId },
   );
+
   return (
     <div className="field">
       <label>QR shape</label>
+      <div className="btnrow" style={{ marginBottom: 8 }}>
+        <button
+          data-sel={!asCode}
+          onClick={() => onFrame(chosen === 'none' ? 'circle' : chosen)}
+          title="The shape is the light ground the code is printed on."
+        >
+          Shape around it
+        </button>
+        <button
+          data-sel={asCode}
+          onClick={() => onSilhouette(chosen === 'none' ? 'star' : chosen)}
+          title="The code itself is drawn as the shape, with each module's centre kept true."
+        >
+          Shape IS the code
+        </button>
+      </div>
       <div className="qrstyles">
         {QR_FRAMES.map((preset) => (
           <button
             key={preset.id}
             className="qrstyle"
-            data-sel={preset.id === frameId}
-            onClick={() => onChange(preset.id)}
+            data-sel={preset.id === chosen}
+            onClick={() => apply(preset.id)}
             title={preset.description}
           >
-            <Swatch url={url} styleId={styleId} frameId={preset.id} />
+            <Swatch
+              url={url} styleId={styleId}
+              frameId={asCode ? 'none' : preset.id}
+              silhouetteId={asCode ? preset.id : 'none'}
+            />
             <span className="qrstyle__name">{preset.name}</span>
           </button>
         ))}
       </div>
       <div className="hint">
-        {active.description}
-        {codeFraction < 0.999 && (
-          <> The code fills {Math.round(codeFraction * 100)}% of the artwork here,
-          so place it about {(1 / codeFraction).toFixed(1)}× wider than a plain square
-          to keep the modules the same size.</>
+        {asCode ? (
+          <>
+            The shape is painted over the code and every module&rsquo;s centre put back —
+            that centre is the only part a scanner reads, and the eyes, timing and
+            alignment patterns are never painted over. It costs size:
+            the readable feature is a third of a module, so print this
+            about {minModuleScale}× wider than a plain code. Preflight enforces it.
+          </>
+        ) : (
+          <>
+            {active.description}
+            {codeFraction < 0.999 && (
+              <> The code fills {Math.round(codeFraction * 100)}% of the artwork here,
+              so place it about {(1 / codeFraction).toFixed(1)}× wider than a plain square
+              to keep the modules the same size.</>
+            )}
+          </>
         )}
       </div>
     </div>
   );
 }
 
-function Swatch({ url, styleId, frameId }: { url: string; styleId: string; frameId: QrFrameId }) {
+function Swatch({ url, styleId, frameId, silhouetteId = 'none' }: {
+  url: string; styleId: string; frameId: QrFrameId; silhouetteId?: QrFrameId;
+}) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -120,7 +168,10 @@ function Swatch({ url, styleId, frameId }: { url: string; styleId: string; frame
 
     const { art } = buildQrArtwork(
       normaliseUrl(url) ?? 'https://example.com',
-      { style: getQrStyle(styleId), frame: frameId, dark: [15, 23, 42] },
+      {
+        style: getQrStyle(styleId), frame: frameId, silhouette: silhouetteId,
+        level: silhouetteId === 'none' ? 'M' : 'H', dark: [15, 23, 42],
+      },
     );
 
     // Square backing store, with the artwork letterboxed inside it: a frame
@@ -151,7 +202,7 @@ function Swatch({ url, styleId, frameId }: { url: string; styleId: string; frame
       // light rings are holes cut by reverse winding, not white paint on top.
       ctx.fill();
     }
-  }, [url, styleId, frameId]);
+  }, [url, styleId, frameId, silhouetteId]);
 
   return <canvas ref={ref} className="qrstyle__swatch" />;
 }

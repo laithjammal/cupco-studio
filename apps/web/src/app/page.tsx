@@ -15,7 +15,7 @@ import {
 } from '@cupco/geometry';
 import {
   renderDesignToCanvas, EMPTY_DESIGN, createImageElement, createTextElement,
-  createVectorElement, FONT_CHOICES, cssFamily, nextId, withQrUrl, withQrStyle, withQrFrame,
+  createVectorElement, FONT_CHOICES, cssFamily, nextId, withQrUrl, withQrStyle, withQrFrame, withQrSilhouette,
   type Design, type DesignElement, type ElementId, type TextElement,
 } from '@/lib/design';
 import { useHistory } from '@/lib/useHistory';
@@ -792,14 +792,19 @@ export default function Page() {
               url={qrElement.url}
               styleId={qrElement.styleId}
               frameId={qrElement.frameId}
-              onChange={(id) => commitElement(qrElement.id, withQrFrame(qrElement, id))}
+              silhouetteId={qrElement.silhouetteId}
+              onFrame={(id) => commitElement(qrElement.id, withQrFrame(qrElement, id))}
+              onSilhouette={(id) => commitElement(qrElement.id, withQrSilhouette(qrElement, id))}
             />
-            <QrStylePicker
-              url={qrElement.url}
-              styleId={qrElement.styleId}
-              frameId={qrElement.frameId}
-              onChange={(id) => commitElement(qrElement.id, withQrStyle(qrElement, id))}
-            />
+            {qrElement.silhouetteId === 'none' && (
+              <QrStylePicker
+                url={qrElement.url}
+                styleId={qrElement.styleId}
+                frameId={qrElement.frameId}
+                silhouetteId={qrElement.silhouetteId}
+                onChange={(id) => commitElement(qrElement.id, withQrStyle(qrElement, id))}
+              />
+            )}
             <div className="hint">
               Shape and style change the drawing, never the data — the shape is the
               light ground the code sits on, not a mask over it. Every one is decoded

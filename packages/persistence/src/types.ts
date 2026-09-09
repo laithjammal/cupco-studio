@@ -134,6 +134,13 @@ export interface StoredQrElement extends StoredBase {
    * frames existed loads back exactly as it was, with no migration.
    */
   frameId?: string;
+  /**
+   * A shape drawn AS the code rather than around it.
+   *
+   * Optional, absent meaning none - so designs saved before silhouettes
+   * existed load back unchanged.
+   */
+  silhouetteId?: string;
 }
 
 /** Text and bands are plain data and are stored verbatim. */

@@ -82,6 +82,7 @@ export function toPreflightDesign(
         qr: {
           url: el.url, live: el.live, moduleCount: el.moduleCount,
           codeFraction: el.codeFraction,
+          minModuleScale: el.minModuleScale,
         },
       };
     }

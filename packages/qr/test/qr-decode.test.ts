@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildQrArtwork, QR_STYLES, getQrStyle, normaliseUrl } from '../src/index';
 import type { QrStyle, QrFrameId } from '../src/index';
-import { QR_FRAMES, buildFrame } from '../src/index';
+import { QR_FRAMES, buildFrame, isStructural } from '../src/index';
 import { rasterise, rasteriseArtwork, blur, modulesOf } from './qr-raster';
 import { decodeWithJsQr as jsQRdecode, decodeWithZxing, shrinkEach } from './qr-decoders';
 
@@ -398,4 +398,154 @@ describe('frame geometry', () => {
     expect(b.moduleCount).toBe(a.moduleCount);
     expect(modulesOf(b.art).length).toBe(modulesOf(a.art).length);
   });
+});
+
+/**
+ * SILHOUETTES — the code drawn AS a shape.
+ *
+ * A decoder samples each module at its CENTRE, so the rest of the module is
+ * free to carry a picture. The shape is painted over the code and every
+ * module's centre third put back at its true value.
+ *
+ * What must never be painted over is structure: the three eyes, their
+ * separators and format information, the timing patterns and the alignment
+ * patterns. Those are not protected by error correction, and without them the
+ * code cannot be located or its grid established at all.
+ */
+describe('silhouettes — the code drawn as a shape', () => {
+  const SIZES = [400, 500, 600, 800, 1000, 1200];
+  const shapes = QR_FRAMES.filter((f) => f.id !== 'none');
+
+  for (const shape of shapes) {
+    it(`${shape.name} decodes on BOTH decoders at every size`, () => {
+      const { art } = buildQrArtwork(URL_SHORT, { silhouette: shape.id, level: 'H' });
+      for (const size of SIZES) {
+        const px = rasteriseArtwork(art, size, [255, 255, 255]);
+        expect(jsQRdecode(px, size)).toBe(URL_SHORT);
+        expect(decodeWithZxing(px, size)).toBe(URL_SHORT);
+      }
+    });
+  }
+
+  it('survives ink spread, once it is printed big enough', () => {
+    // Blur is measured in pixels, so at a given blur it is the module size
+    // that decides - which is exactly what minModuleScale is about.
+    for (const shape of ['star', 'coffee-cup', 'swirl'] as const) {
+      const { art } = buildQrArtwork(URL_SHORT, { silhouette: shape, level: 'H' });
+      const px = blur(rasteriseArtwork(art, 1000, [255, 255, 255]), 1000, 2);
+      expect(jsQRdecode(px, 1000)).toBe(URL_SHORT);
+      expect(decodeWithZxing(px, 1000)).toBe(URL_SHORT);
+    }
+  });
+
+  it('carries a long URL, where the grid is denser and the picture finer', () => {
+    const { art } = buildQrArtwork(URL_LONG, { silhouette: 'star', level: 'H' });
+    const px = rasteriseArtwork(art, 900, [255, 255, 255]);
+    expect(jsQRdecode(px, 900)).toBe(URL_LONG);
+    expect(decodeWithZxing(px, 900)).toBe(URL_LONG);
+  });
+
+  it('reports that it has to print larger, which is the whole cost', () => {
+    const plain = buildQrArtwork(URL_SHORT);
+    const shaped = buildQrArtwork(URL_SHORT, { silhouette: 'star', level: 'H' });
+    expect(plain.minModuleScale).toBe(1);
+    expect(shaped.minModuleScale).toBe(3);
+    expect(shaped.silhouette).toBe('star');
+  });
+
+  /**
+   * The picture actually has to BE there. A silhouette that decoded but looked
+   * identical to a plain code would pass every test above.
+   *
+   * Sampled OFF-CENTRE - a sixth of the way into each module, clear of the
+   * centre third that carries the data - so what is measured is the shape and
+   * not the code. Inside the silhouette those samples must be dark; outside,
+   * light. That is the whole mechanism, stated directly.
+   */
+  it.each(shapes.map((f) => f.id))('%s puts its ink where the shape is', (id) => {
+    const size = 900;
+    const { art, moduleCount: n } = buildQrArtwork(URL_SHORT, { silhouette: id, level: 'H' });
+    const px = rasteriseArtwork(art, size, [255, 255, 255]);
+
+    const f = buildFrame(id);
+    const scale = Math.min(1 / f.boxW, 1 / f.boxH);
+    const offX = (1 - f.boxW * scale) / 2;
+    const offY = (1 - f.boxH * scale) / 2;
+    const rings = [...f.plate, ...f.accent].map((r) =>
+      r.map((q) => ({ x: offX + q.x * scale, y: offY + q.y * scale })));
+    const inRings = (x: number, y: number) => {
+      let c = false;
+      for (const r of rings) {
+        for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+          const a = r[i]!, b = r[j]!;
+          if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) c = !c;
+        }
+      }
+      return c;
+    };
+
+    const u = size / (n + 8);
+    let inDark = 0, inTotal = 0, outDark = 0, outTotal = 0;
+    for (let row = 0; row < n; row++) {
+      for (let col = 0; col < n; col++) {
+        if (isStructural(row, col, n)) continue;
+        const x = Math.round((col + 4 + 1 / 6) * u);
+        const y = Math.round((row + 4 + 1 / 6) * u);
+        const dark = px[(y * size + x) * 4]! < 128;
+        if (inRings((col + 0.5) / n, (row + 0.5) / n)) { inTotal++; if (dark) inDark++; }
+        else { outTotal++; if (dark) outDark++; }
+      }
+    }
+
+    expect(inTotal).toBeGreaterThan(20);
+    expect(outTotal).toBeGreaterThan(20);
+    expect(inDark / inTotal).toBeGreaterThan(0.95);
+    expect(outDark / outTotal).toBeLessThan(0.05);
+  });
+
+  it('two different shapes are two different pictures', () => {
+    const ink = (id: 'star' | 'circle') => {
+      const size = 300;
+      const { art } = buildQrArtwork(URL_SHORT, { silhouette: id, level: 'H' });
+      const px = rasteriseArtwork(art, size, [255, 255, 255]);
+      let dark = 0;
+      for (let i = 0; i < size * size; i++) if (px[i * 4]! < 128) dark++;
+      return dark / (size * size);
+    };
+    expect(Math.abs(ink('star') - ink('circle'))).toBeGreaterThan(0.02);
+  });
+});
+
+describe('structural modules are never painted over', () => {
+  /**
+   * The guarantee the whole technique rests on. Checked against the module
+   * grid directly rather than through a decoder: a decode can succeed by luck
+   * of the error correction, and would hide a finder being quietly damaged.
+   */
+  it.each(QR_FRAMES.filter((f) => f.id !== 'none').map((f) => f.id))(
+    'a %s silhouette leaves every structural module at its true value',
+    (id) => {
+      const size = 900;
+      const { art, moduleCount: n } = buildQrArtwork(URL_SHORT, { silhouette: id, level: 'H' });
+      const px = rasteriseArtwork(art, size, [255, 255, 255]);
+      const qr = buildQrArtwork(URL_SHORT, { level: 'H' });
+      const plain = rasteriseArtwork(qr.art, size, [255, 255, 255]);
+
+      const total = n + 8;
+      const u = size / total;
+      let checked = 0;
+      for (let row = 0; row < n; row++) {
+        for (let col = 0; col < n; col++) {
+          if (!isStructural(row, col, n)) continue;
+          // Sample the module's centre in both renders; they must agree.
+          const x = Math.round((col + 4 + 0.5) * u);
+          const y = Math.round((row + 4 + 0.5) * u);
+          const o = (y * size + x) * 4;
+          expect(px[o]! < 128).toBe(plain[o]! < 128);
+          checked++;
+        }
+      }
+      expect(checked).toBeGreaterThan(100);
+    },
+  );
 });

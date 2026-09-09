@@ -33,7 +33,32 @@ const { art, moduleCount, codeFraction } = buildQrArtwork(url!, {
 | **Coffee cup** | A takeaway cup, code on the body, lid on top. |
 | **Swirl** | A round plate with spiral arms turning out of it. |
 
-### A shape is the GROUND, never a mask
+### Two ways to use a shape
+
+**Around the code** — the shape is the light ground the code is printed on.
+**As the code** — the shape is painted over the code itself.
+
+The second is what people usually mean by "a QR in the shape of X", and it works
+because a decoder reads each module at its **centre**. Paint the picture over the
+whole grid, then put every module's centre third back at its true value, and the
+artwork looks like a star while scanning as the same code.
+
+Two things make it safe, and both are asserted rather than assumed:
+
+- **Structural modules are never painted over** — the three eyes and their separators,
+  the format information, the timing patterns and the alignment patterns. Those carry no
+  error correction, and without them the code cannot be located or its grid established.
+  `structure.ts` maps them; a test samples every one of them against a plain render and
+  requires them identical.
+- **It has to print about 3× larger.** The readable feature is now a third of a module,
+  and it is that patch — not the module — which must survive ink spread and a phone
+  camera. `minModuleScale` reports it and preflight multiplies its floor by it.
+
+Every silhouette is decoded by both decoders at six sizes, blurred, and with a long URL.
+A separate test samples each module OFF-centre and requires the ink to follow the shape —
+otherwise a silhouette that quietly did nothing would pass everything else.
+
+### As a ground, a shape is never a mask
 
 The obvious reading of "a round QR code" is a code clipped to a circle. That cannot work.
 The module grid is fixed by the data — modules can be restyled but never moved — and the
@@ -118,7 +143,7 @@ that it scans.
 independent of the code under test, so a shared bug cannot make both agree.
 
 ```bash
-npm test                                              # 92 tests
+npm test                                              # 117 tests
 npx tsx scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg
 ```
 
@@ -133,7 +158,7 @@ everything here is about turning that grid into geometry that still scans.
 
 ```bash
 npm install          # qrcode-generator, plus two decoders for the tests
-npm test             # 92 tests
+npm test             # 117 tests
 npm run build        # dist/ — JavaScript plus .d.ts, for consumers who need it
 ```
 

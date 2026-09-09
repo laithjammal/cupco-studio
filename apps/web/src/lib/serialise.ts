@@ -111,6 +111,7 @@ export async function serialiseDesign(
         ...base, type: 'qr', url: el.url, widthU: el.widthU, styleId: el.styleId,
         // Omitted when square, so older documents round-trip unchanged.
         ...(el.frameId !== 'none' ? { frameId: el.frameId } : {}),
+        ...(el.silhouetteId !== 'none' ? { silhouetteId: el.silhouetteId } : {}),
       });
     } else if (el.type === 'text') {
       elements.push({
@@ -184,14 +185,18 @@ export async function deserialiseDesign(
       // it. An older document has no frameId and comes back square.
       const normalised = normaliseUrl(el.url);
       const frameId = (el.frameId ?? 'none') as QrFrameId;
-      const { art, moduleCount, codeFraction } = buildQrArtwork(
+      const silhouetteId = (el.silhouetteId ?? 'none') as QrFrameId;
+      const { art, moduleCount, codeFraction, minModuleScale } = buildQrArtwork(
         normalised ?? 'https://example.com',
-        { style: getQrStyle(el.styleId), frame: frameId },
+        {
+          style: getQrStyle(el.styleId), frame: frameId, silhouette: silhouetteId,
+          level: silhouetteId === 'none' ? 'M' : 'H',
+        },
       );
       elements.push({
         ...base, type: 'qr',
         url: el.url, live: normalised !== null, art, widthU: el.widthU, moduleCount,
-        styleId: el.styleId, frameId, codeFraction,
+        styleId: el.styleId, frameId, silhouetteId, codeFraction, minModuleScale,
       });
     } else if (el.type === 'text') {
       elements.push({

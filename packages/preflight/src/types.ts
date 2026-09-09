@@ -72,6 +72,14 @@ export interface PreflightElement {
      * wider than the code and the modules are correspondingly smaller.
      */
     codeFraction?: number;
+    /**
+     * How much larger than normal a module must print. Absent means 1.
+     *
+     * 3 for a silhouette code, where the part a decoder reads is the module's
+     * centre third - and it is that patch, not the module, which has to
+     * survive ink spread and a phone camera.
+     */
+    minModuleScale?: number;
   };
 }
 
