@@ -130,11 +130,17 @@ const NAMED: Record<string, RGB> = {
 
 interface Paint { fill: RGB | null; opacity: number; warning?: string }
 
-function resolvePaint(node: XNode, inherited: Paint): Paint {
+function resolvePaint(node: XNode, inherited: Paint, rules: readonly CssRule[] = []): Paint {
   const style = parseStyle(node.attrs['style']);
-  const raw = (style['fill'] ?? node.attrs['fill'] ?? '').trim().toLowerCase();
-  const fillOpacity = num(style['fill-opacity'] ?? node.attrs['fill-opacity'], 1);
-  const opacity = num(style['opacity'] ?? node.attrs['opacity'], 1) * fillOpacity * inherited.opacity;
+  const css = cssFor(node, rules);
+  // Cascade order: an inline style wins, then the stylesheet, and a
+  // presentation attribute loses to both - which is what the spec says, and
+  // what tools rely on when they emit a placeholder fill alongside a class.
+  const prop = (name: string) => style[name] ?? css[name] ?? node.attrs[name];
+
+  const raw = (prop('fill') ?? '').trim().toLowerCase();
+  const fillOpacity = num(prop('fill-opacity'), 1);
+  const opacity = num(prop('opacity'), 1) * fillOpacity * inherited.opacity;
 
   if (raw === 'none') return { fill: null, opacity };
   if (raw.startsWith('url(')) {
@@ -218,11 +224,120 @@ function primitiveToSubpaths(node: XNode): SubPath[] | null {
 
 const UNSUPPORTED_CONTAINERS = new Set(['clippath', 'mask', 'filter', 'defs', 'symbol', 'marker']);
 
+/* ------------------------------ stylesheets ------------------------------ */
+
+/**
+ * The internal stylesheet.
+ *
+ * Illustrator's default SVG export puts every fill in a <style> block and
+ * references it by class - `.cls-1{fill:#e6a670}` - rather than writing
+ * `fill` on each shape. Without this, every one of those shapes resolves to
+ * the inherited default, and the whole logo imports as a solid black
+ * silhouette with its detail welded shut. It is the commonest way a real
+ * logo arrives, so it cannot be treated as an edge case.
+ *
+ * Only SIMPLE selectors are honoured - a chain of tag, .class and #id with no
+ * combinator. That covers what drawing tools emit. Anything more elaborate is
+ * reported rather than half-applied, because a selector we score wrongly
+ * would put a confidently wrong colour on the artwork.
+ */
+interface CssRule {
+  tag: string | null;
+  classes: string[];
+  id: string | null;
+  specificity: number;
+  order: number;
+  decls: Record<string, string>;
+}
+
+const SIMPLE_SELECTOR = /^(?:[A-Za-z][\w-]*)?(?:[.#][A-Za-z_-][\w-]*)*$/;
+
+/**
+ * Pull every <style> block out of the raw source, returning the rules and the
+ * source with those blocks removed.
+ *
+ * Done on the TEXT, before parsing, for two reasons: the element scanner keeps
+ * no text content, so a parsed tree cannot reach the CSS at all; and CSS may
+ * contain `>` and `<`, which would otherwise derail the scanner.
+ */
+function extractStylesheet(src: string): { rules: CssRule[]; rest: string; warn: string | null } {
+  const rules: CssRule[] = [];
+  let unsupported = false;
+  let order = 0;
+
+  const rest = src.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (_all, body: string) => {
+    const css = body
+      .replace(/<!\[CDATA\[|\]\]>/g, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    // No @media, @font-face or other at-rules: their bodies nest braces and
+    // this splitter cannot see that. Skipping is safer than mis-pairing.
+    for (const block of css.split('}')) {
+      const brace = block.indexOf('{');
+      if (brace < 0) continue;
+      const selectors = block.slice(0, brace);
+      if (selectors.includes('@')) { unsupported = true; continue; }
+      const decls = parseStyle(block.slice(brace + 1));
+      for (const raw of selectors.split(',')) {
+        const sel = raw.trim();
+        if (!sel) continue;
+        if (!SIMPLE_SELECTOR.test(sel)) { unsupported = true; continue; }
+        const classes = [...sel.matchAll(/\.([A-Za-z_-][\w-]*)/g)].map((m) => m[1]!);
+        const ids = [...sel.matchAll(/#([A-Za-z_-][\w-]*)/g)].map((m) => m[1]!);
+        const tagM = /^[A-Za-z][\w-]*/.exec(sel);
+        rules.push({
+          tag: tagM ? tagM[0].toLowerCase() : null,
+          classes,
+          id: ids[0] ?? null,
+          // The cascade's own weighting: an id beats any number of classes,
+          // a class beats any number of tags.
+          specificity: ids.length * 100 + classes.length * 10 + (tagM ? 1 : 0),
+          order: order++,
+          decls,
+        });
+      }
+    }
+    return '';
+  });
+
+  return {
+    rules,
+    rest,
+    warn: unsupported ? 'some CSS rules were too complex to apply' : null,
+  };
+}
+
+/** Declarations from the stylesheet that apply to one node, cascade applied. */
+function cssFor(node: XNode, rules: readonly CssRule[]): Record<string, string> {
+  if (rules.length === 0) return {};
+  const classes = (node.attrs['class'] ?? '').split(/\s+/).filter(Boolean);
+  const id = node.attrs['id'];
+  const winners: Record<string, { spec: number; order: number; value: string }> = {};
+
+  for (const r of rules) {
+    if (r.tag && r.tag !== node.tag) continue;
+    if (r.id && r.id !== id) continue;
+    if (!r.classes.every((c) => classes.includes(c))) continue;
+    for (const [prop, value] of Object.entries(r.decls)) {
+      const held = winners[prop];
+      if (!held || r.specificity > held.spec
+        || (r.specificity === held.spec && r.order > held.order)) {
+        winners[prop] = { spec: r.specificity, order: r.order, value };
+      }
+    }
+  }
+
+  const out: Record<string, string> = {};
+  for (const [prop, w] of Object.entries(winners)) out[prop] = w.value;
+  return out;
+}
+
 export function importSvg(source: string): SvgImportResult {
-  const root = parseXml(source);
+  const sheet = extractStylesheet(source);
+  const root = parseXml(sheet.rest);
   if (!root) return { shapes: [], width: 0, height: 0, warnings: ['Not a valid SVG document'] };
 
   const warnings = new Set<string>();
+  if (sheet.warn) warnings.add(sheet.warn);
   const shapes: ImportedShape[] = [];
 
   // Establish the user-unit box. viewBox wins; width/height is the fallback.
@@ -248,7 +363,7 @@ export function importSvg(source: string): SvgImportResult {
       if (child.tag === 'text') { warnings.add('<text> skipped — convert type to outlines'); continue; }
 
       const m = mul(ctm, parseTransform(child.attrs['transform']));
-      const p = resolvePaint(child, paint);
+      const p = resolvePaint(child, paint, sheet.rules);
       if (p.warning) warnings.add('gradients/patterns flattened to a solid colour');
 
       if (child.tag === 'g' || child.tag === 'svg' || child.tag === 'a') {
