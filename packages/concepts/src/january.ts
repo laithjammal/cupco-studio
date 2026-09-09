@@ -20,6 +20,7 @@ import { harmonise } from './harmonise';
 import {
   type ConceptInput, type ConceptLayout, type ConceptStrategy, type Placement,
 } from './types';
+import { boundaryURange } from '@cupco/geometry';
 
 /**
  * The template's own geometry, mirrored from apps/web's template-art.ts.
@@ -54,21 +55,36 @@ export const january: ConceptStrategy = {
     const { widthPx, heightPx } = input.profile.designCanvas;
     const canvasRatio = widthPx / heightPx;
 
-    // Sized to cover the whole BLEED, so no edge of the cup shows paper. The
-    // artwork is proportionally taller than the wrap, so fitting it by width
-    // would leave the top and bottom short; it is fitted by height and
-    // slightly cropped at the sides instead, where there is only foliage.
-    const heightV = 1.42;
-    const widthU = heightV / (TEMPLATE.aspect * canvasRatio);
+    // Sized from the BLANK'S WIDTH, not its height.
+    //
+    // The artwork is proportionally taller than the wrap (2.25:1 against the
+    // cup's 2.68:1), so one of the two axes has to overhang. Fitting it by
+    // HEIGHT made it 25% wider than the blank, and the 20% that fell off each
+    // side took the artwork's right-hand lettering with it.
+    //
+    // Fitting by width instead means the whole illustration is on the blank,
+    // and the overhang moves to the top and bottom - which is where this
+    // particular artwork can afford it, since the top is open sky and the
+    // bottom is hills.
+    const bleedU = boundaryURange(input.profile, input.geom, 'bleed');
+    const uLeft = Math.min(bleedU.atTop.uLeft, bleedU.atBottom.uLeft);
+    const uRight = Math.max(bleedU.atTop.uRight, bleedU.atBottom.uRight);
+    const widthU = uRight - uLeft;
+    const heightV = widthU * TEMPLATE.aspect * canvasRatio;
+
+    // Centred on the CUP, not on the blank: the design's middle should sit at
+    // the middle of what a person looking at the cup actually sees.
+    const centreU = (uLeft + uRight) / 2;
+    const centreV = 0.5;
 
     const placements: Placement[] = [{
       kind: 'template', template: TEMPLATE.id, color: accent,
-      u: 0.5, v: 0.5, rotation: 0, widthU, bleeds: true,
+      u: centreU, v: centreV, rotation: 0, widthU, bleeds: true,
     }];
 
     // The disc, carried from image coordinates onto the cup.
-    const discU = 0.5 + (TEMPLATE.logo.u - 0.5) * widthU;
-    const discV = 0.5 + (TEMPLATE.logo.v - 0.5) * heightV;
+    const discU = centreU + (TEMPLATE.logo.u - 0.5) * widthU;
+    const discV = centreV + (TEMPLATE.logo.v - 0.5) * heightV;
     const discWidthU = TEMPLATE.logo.diameter * widthU;
 
     // Sized so the mark fits the disc whichever way round it is: a wide mark

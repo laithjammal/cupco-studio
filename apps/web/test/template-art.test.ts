@@ -32,10 +32,13 @@ describe('the January template', () => {
     const c = january();
     const t = c.placements.find((p) => p.kind === 'template')!;
     const mark = c.placements[c.placements.length - 1]!;
-    const expectedU = 0.5 + (spec.logo.u - 0.5) * t.widthU!;
+    // Measured from where the ARTWORK actually sits, not from the middle of
+    // the cup: the template is centred on the blank's width, which is not
+    // quite u=0.5, and the disc has to travel with it.
     const heightV = t.widthU! * spec.aspect
       * (CUP_8OZ.designCanvas.widthPx / CUP_8OZ.designCanvas.heightPx);
-    const expectedV = 0.5 + (spec.logo.v - 0.5) * heightV;
+    const expectedU = t.u + (spec.logo.u - 0.5) * t.widthU!;
+    const expectedV = t.v + (spec.logo.v - 0.5) * heightV;
     expect(mark.u).toBeCloseTo(expectedU, 6);
     expect(mark.v).toBeCloseTo(expectedV, 6);
   });

@@ -6,6 +6,7 @@ import {
   type ConceptInput,
 } from '../src/index';
 import { hexToRgb, motifAspect, type RGB, type MotifId } from '@cupco/vector';
+import { boundaryURange } from '@cupco/geometry';
 
 const geom = deriveFrustum(CUP_8OZ.dimensions);
 
@@ -485,13 +486,35 @@ describe('January template', () => {
     expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThan(10);
   });
 
-  it('covers the whole cup, bleed included', () => {
+  /**
+   * Fitted by WIDTH, so the whole illustration is on the blank.
+   *
+   * The artwork is proportionally taller than the wrap, so one axis has to
+   * overhang. Fitting by height made it 25% wider than the blank and threw
+   * the right-hand lettering off the edge - so the width is what is matched,
+   * exactly, and the overhang goes to the top and bottom instead.
+   */
+  it('spans the blank exactly, edge to edge', () => {
+    const t = tpl(jan(GREEN));
+    const u = boundaryURange(CUP_8OZ, geom, 'bleed');
+    const uLeft = Math.min(u.atTop.uLeft, u.atBottom.uLeft);
+    const uRight = Math.max(u.atTop.uRight, u.atBottom.uRight);
+    expect(t.u - t.widthU! / 2).toBeCloseTo(uLeft, 6);
+    expect(t.u + t.widthU! / 2).toBeCloseTo(uRight, 6);
+    expect(t.bleeds).toBe(true);
+  });
+
+  it('still covers the cup top to bottom, with the overhang there instead', () => {
     const t = tpl(jan(GREEN));
     const { widthPx, heightPx } = CUP_8OZ.designCanvas;
     const heightV = t.widthU! * (836 / 1882) * (widthPx / heightPx);
-    expect(t.widthU!).toBeGreaterThan(1.1);   // past both seams
-    expect(heightV).toBeGreaterThan(1.36);    // past the rim and the base
-    expect(t.bleeds).toBe(true);
+    expect(t.v - heightV / 2).toBeLessThan(0);
+    expect(t.v + heightV / 2).toBeGreaterThan(1);
+  });
+
+  it('centres the design on the CUP, not on the blank', () => {
+    // What a person looking at the cup sees should be the middle of the art.
+    expect(tpl(jan(GREEN)).v).toBeCloseTo(0.5, 6);
   });
 
   it('puts the mark in the reserved disc, painted LAST', () => {
