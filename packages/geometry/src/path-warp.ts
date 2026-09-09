@@ -136,15 +136,29 @@ export function warpShapeWrapped(
   toleranceMm: number = DEFAULT_FLATNESS_MM,
 ): FanShape[] {
   const out: FanShape[] = [];
-  for (const du of [-1, 0, 1]) {
+
+  // A shape that already spans the whole circumference needs no wrapped copy:
+  // the copies would land on top of it and paint its far side over its near
+  // side. That is how a full-bleed template loses its right-hand content
+  // under its own left-hand edge.
+  let minU = Infinity, maxU = -Infinity;
+  for (const r of shape.subpaths) {
+    for (const p of r) { if (p.u < minU) minU = p.u; if (p.u > maxU) maxU = p.u; }
+  }
+  const offsets = maxU - minU >= 1 ? [0] : [-1, 0, 1];
+
+  for (const du of offsets) {
     const shifted: DesignShape = {
       ...shape,
       subpaths: shape.subpaths.map((r) => r.map((p) => ({ u: p.u + du, v: p.v }))),
     };
-    // Cheap reject: if every point is well outside [0,1] in u, it cannot show.
-    const anyVisible = shifted.subpaths.some((r) =>
-      r.some((p) => p.u > -0.02 && p.u < 1.02));
-    if (!anyVisible) continue;
+    // Cheap reject: drop a copy whose u SPAN misses the sector entirely.
+    //
+    // Tested as a span, not as vertices. A shape wide enough to straddle the
+    // whole sector has every vertex outside it while covering all of it, so a
+    // per-vertex test discards precisely the shapes that matter most - a
+    // full-bleed background would vanish from the vector export.
+    if (minU + du > 1.02 || maxU + du < -0.02) continue;
     out.push(warpShape(shifted, geom, toleranceMm));
   }
   return out;

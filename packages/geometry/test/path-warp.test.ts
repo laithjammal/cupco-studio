@@ -156,3 +156,32 @@ describe('vector warp agrees with the raster mapping', () => {
     }
   });
 });
+
+/**
+ * The same seam-wrap trap on the vector path.
+ *
+ * warpShapeWrapped emits a copy either side of the seam so a shape crossing it
+ * still prints on both. A shape that already spans the whole circumference
+ * must NOT get them: the copies overlap it and lay its far side over its near
+ * side, which on a full-bleed design silently buries content.
+ */
+describe('warpShapeWrapped on a full-circumference shape', () => {
+  const geom = deriveFrustum(CUP_8OZ.dimensions);
+  const rect = (u0: number, u1: number): DesignShape => ({
+    subpaths: [[
+      { u: u0, v: 0.2 }, { u: u1, v: 0.2 }, { u: u1, v: 0.8 }, { u: u0, v: 0.8 },
+    ]],
+    fill: [0, 0, 0],
+    opacity: 1,
+  });
+
+  it('emits one copy, not three, when it already spans the wrap', () => {
+    expect(warpShapeWrapped(rect(-0.06, 1.06), geom)).toHaveLength(1);
+    expect(warpShapeWrapped(rect(0, 1), geom)).toHaveLength(1);
+  });
+
+  it('still emits the seam copies for a shape narrower than the wrap', () => {
+    // Straddling u = 0: it has to appear at both edges.
+    expect(warpShapeWrapped(rect(-0.1, 0.1), geom).length).toBeGreaterThan(1);
+  });
+});

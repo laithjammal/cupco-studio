@@ -392,6 +392,31 @@ export function pointInPolygon(
 }
 
 /**
+ * Whether an element has to be drawn again either side of the seam.
+ *
+ * Design space wraps, so an element straddling u = 0 is visible at both edges
+ * of the canvas and is drawn three times to show it.
+ *
+ * An element that already spans the WHOLE circumference must not be: its
+ * wrapped copies land on top of itself, and each one paints the far side of
+ * the artwork over the near side. A full-bleed template loses its right-hand
+ * content underneath its own left-hand edge that way - which is exactly what
+ * happened to the January artwork's "LOCAL CAFES / BRIGHTER TOGETHER" block.
+ *
+ * A band is excluded for the same reason: it is full width by definition and
+ * is already drawn wide enough to cover the canvas in one pass.
+ */
+export function needsSeamCopies(
+  el: DesignElement,
+  canvasW: number,
+  canvasH: number,
+  measure?: CanvasRenderingContext2D,
+): boolean {
+  if (el.type === 'band') return false;
+  return halfExtent(el, canvasW, canvasH, measure).du * 2 < 1;
+}
+
+/**
  * Topmost element under a design-space point, or null.
  *
  * u is tested at three offsets because design space wraps: an element
@@ -503,7 +528,7 @@ export function renderDesign(
   }
 
   for (const el of design.elements) {
-    for (const dx of [-width, 0, width]) {
+    for (const dx of needsSeamCopies(el, width, height, ctx) ? [-width, 0, width] : [0]) {
       ctx.save();
       ctx.globalAlpha = el.opacity ?? 1;
       ctx.translate(el.u * width + dx, yOf(el.v));
