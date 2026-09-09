@@ -14,6 +14,7 @@
  */
 
 import { flattenPathData, type Pt, type SubPath } from './path-data';
+import { strokeToSubpaths } from './stroke';
 import { hexToRgb, type RGB } from './color';
 
 export interface ImportedShape {
@@ -48,7 +49,10 @@ function parseXml(src: string): XNode | null {
     .replace(/<!DOCTYPE[^>]*>/gi, '')
     .replace(/<\?[\s\S]*?\?>/g, '');
 
-  const tagRe = /<\s*(\/)?\s*([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/)?\s*>/g;
+  // Attribute values may be unquoted, and an attribute may have no value at
+  // all. Requiring `name="value"` for every one made a single stray attribute
+  // fail the whole tag match, and the element was then dropped in silence.
+  const tagRe = /<\s*(\/)?\s*([A-Za-z_][\w.:-]*)((?:\s+[\w.:-]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?)*)\s*(\/)?\s*>/g;
   const root: XNode = { tag: '#root', attrs: {}, children: [] };
   const stack: XNode[] = [root];
   let m: RegExpExecArray | null;
@@ -68,9 +72,11 @@ function parseXml(src: string): XNode | null {
 
 function parseAttrs(s: string): Record<string, string> {
   const out: Record<string, string> = {};
-  const re = /([\w.:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  const re = /([\w.:-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(s)) !== null) out[m[1]!.toLowerCase()] = m[2] ?? m[3] ?? '';
+  while ((m = re.exec(s)) !== null) {
+    out[m[1]!.toLowerCase()] = m[2] ?? m[3] ?? m[4] ?? '';
+  }
   return out;
 }
 
@@ -128,7 +134,14 @@ const NAMED: Record<string, RGB> = {
   orange: [255, 165, 0], purple: [128, 0, 128], silver: [192, 192, 192], navy: [0, 0, 128],
 };
 
-interface Paint { fill: RGB | null; opacity: number; warning?: string }
+interface Paint {
+  fill: RGB | null;
+  opacity: number;
+  /** A stroke is filled geometry by the time it leaves here - see ./stroke. */
+  stroke: RGB | null;
+  strokeWidth: number;
+  warning?: string;
+}
 
 function resolvePaint(node: XNode, inherited: Paint, rules: readonly CssRule[] = []): Paint {
   const style = parseStyle(node.attrs['style']);
@@ -138,18 +151,29 @@ function resolvePaint(node: XNode, inherited: Paint, rules: readonly CssRule[] =
   // what tools rely on when they emit a placeholder fill alongside a class.
   const prop = (name: string) => style[name] ?? css[name] ?? node.attrs[name];
 
-  const raw = (prop('fill') ?? '').trim().toLowerCase();
   const fillOpacity = num(prop('fill-opacity'), 1);
   const opacity = num(prop('opacity'), 1) * fillOpacity * inherited.opacity;
 
-  if (raw === 'none') return { fill: null, opacity };
-  if (raw.startsWith('url(')) {
-    // Gradient or pattern: not interpreted. Fall back to inherited paint and
-    // report it, rather than dropping the shape or inventing a colour.
-    return { fill: inherited.fill ?? [128, 128, 128], opacity, warning: 'gradient-or-pattern' };
-  }
-  if (raw === '') return { fill: inherited.fill, opacity };
-  return { fill: parseColour(raw) ?? inherited.fill, opacity };
+  let warning: string | undefined;
+  const colour = (raw: string | undefined, inheritedColour: RGB | null): RGB | null => {
+    const v = (raw ?? '').trim().toLowerCase();
+    if (v === '') return inheritedColour;
+    if (v === 'none' || v === 'transparent') return null;
+    if (v.startsWith('url(')) {
+      warning = 'gradient-or-pattern';
+      return inheritedColour ?? [128, 128, 128];
+    }
+    return parseColour(v) ?? inheritedColour;
+  };
+
+  const strokeWidthRaw = prop('stroke-width');
+  return {
+    fill: colour(prop('fill'), inherited.fill),
+    opacity,
+    stroke: colour(prop('stroke'), inherited.stroke),
+    strokeWidth: strokeWidthRaw === undefined ? inherited.strokeWidth : num(strokeWidthRaw, 1),
+    warning,
+  };
 }
 
 function parseStyle(s: string | undefined): Record<string, string> {
@@ -353,37 +377,95 @@ export function importSvg(source: string): SvgImportResult {
   }
   const base: Mat = vb ? [1, 0, 0, 1, -vb[0]!, -vb[1]!] : IDENTITY;
 
-  const walk = (node: XNode, ctm: Mat, paint: Paint): void => {
-    for (const child of node.children) {
-      if (UNSUPPORTED_CONTAINERS.has(child.tag)) {
-        if (child.tag !== 'defs') warnings.add(`<${child.tag}> is not interpreted`);
-        continue;
+  // Every element carrying an id, so <use> can find what it points at. Built
+  // over the WHOLE tree including <defs> and <symbol>, which is where the
+  // referenced content almost always lives.
+  const byId = new Map<string, XNode>();
+  (function index(n: XNode) {
+    const id = n.attrs['id'];
+    if (id && !byId.has(id)) byId.set(id, n);
+    for (const c of n.children) index(c);
+  })(root);
+
+  const emit = (child: XNode, ctm: Mat, paint: Paint, active: ReadonlySet<string>): void => {
+    if (child.tag === 'image') { warnings.add('embedded <image> skipped'); return; }
+    if (child.tag === 'text') { warnings.add('<text> skipped — convert type to outlines'); return; }
+
+    const m = mul(ctm, parseTransform(child.attrs['transform']));
+    const p = resolvePaint(child, paint, sheet.rules);
+    if (p.warning) warnings.add('gradients/patterns flattened to a solid colour');
+    if (child.attrs['clip-path'] || child.attrs['mask']) {
+      warnings.add('clipping and masks are not applied — artwork may extend further than intended');
+    }
+
+    // <use> instantiates something defined elsewhere. Unresolved, it is a
+    // silent hole in the artwork: the element draws nothing itself, and
+    // whatever it points at usually sits in <defs>, which is never walked.
+    if (child.tag === 'use') {
+      const href = (child.attrs['href'] ?? child.attrs['xlink:href'] ?? '').trim();
+      if (!href.startsWith('#')) { warnings.add('<use> of an external file skipped'); return; }
+      const id = href.slice(1);
+      const target = byId.get(id);
+      if (!target) { warnings.add(`<use> points at "${id}", which is not in the file`); return; }
+      // A reference cycle would otherwise recurse until the stack gives out.
+      if (active.has(id)) { warnings.add('<use> refers to itself — the cycle was cut'); return; }
+      const placed = mul(m, [1, 0, 0, 1, num(child.attrs['x'], 0), num(child.attrs['y'], 0)]);
+      const next = new Set(active); next.add(id);
+      // A referenced <symbol> or <g> contributes its children, anything else
+      // contributes itself.
+      if (target.tag === 'symbol' || target.tag === 'g' || target.tag === 'svg') {
+        for (const c of target.children) emit(c, placed, p, next);
+      } else {
+        emit(target, placed, p, next);
       }
-      if (child.tag === 'image') { warnings.add('embedded <image> skipped'); continue; }
-      if (child.tag === 'text') { warnings.add('<text> skipped — convert type to outlines'); continue; }
+      return;
+    }
 
-      const m = mul(ctm, parseTransform(child.attrs['transform']));
-      const p = resolvePaint(child, paint, sheet.rules);
-      if (p.warning) warnings.add('gradients/patterns flattened to a solid colour');
-
-      if (child.tag === 'g' || child.tag === 'svg' || child.tag === 'a') {
-        walk(child, m, p);
-        continue;
+    if (child.tag === 'g' || child.tag === 'svg' || child.tag === 'a') {
+      for (const c of child.children) {
+        if (UNSUPPORTED_CONTAINERS.has(c.tag)) {
+          if (c.tag !== 'defs' && c.tag !== 'symbol') warnings.add(`<${c.tag}> is not interpreted`);
+          continue;
+        }
+        emit(c, m, p, active);
       }
+      return;
+    }
 
-      const subs = primitiveToSubpaths(child);
-      if (subs === null) { walk(child, m, p); continue; }
-      if (subs.length === 0 || !p.fill) continue;
+    const subs = primitiveToSubpaths(child);
+    if (subs === null) {
+      for (const c of child.children) emit(c, m, p, active);
+      return;
+    }
+    if (subs.length === 0) return;
 
-      shapes.push({
-        subpaths: subs.map((s) => ({ closed: s.closed, points: s.points.map((pt) => apply(m, pt)) })),
-        fill: p.fill,
-        opacity: p.opacity,
-      });
+    const place = (list: SubPath[]) => list.map((sp) => ({
+      closed: sp.closed,
+      points: sp.points.map((pt) => apply(m, pt)),
+    }));
+
+    if (p.fill) {
+      shapes.push({ subpaths: place(subs), fill: p.fill, opacity: p.opacity });
+    }
+
+    // The stroke is outlined in the element's OWN coordinates and transformed
+    // afterwards, so the width scales with the artwork exactly as the renderer
+    // would have scaled it.
+    if (p.stroke && p.strokeWidth > 0) {
+      const outline = strokeToSubpaths(subs, p.strokeWidth);
+      if (outline.length > 0) {
+        shapes.push({ subpaths: place(outline), fill: p.stroke, opacity: p.opacity });
+      }
     }
   };
 
-  walk(root, base, { fill: [0, 0, 0], opacity: 1 });
+  for (const c of root.children) {
+    if (UNSUPPORTED_CONTAINERS.has(c.tag)) {
+      if (c.tag !== 'defs' && c.tag !== 'symbol') warnings.add(`<${c.tag}> is not interpreted`);
+      continue;
+    }
+    emit(c, base, { fill: [0, 0, 0], opacity: 1, stroke: null, strokeWidth: 1 }, new Set());
+  }
 
   if (shapes.length === 0) warnings.add('No filled shapes found');
   if (!width || !height) {

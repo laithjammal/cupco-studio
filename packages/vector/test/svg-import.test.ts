@@ -87,3 +87,73 @@ describe('CSS in <style>', () => {
     expect(r.shapes).toHaveLength(1);
   });
 });
+
+/**
+ * Everything that used to vanish without a word.
+ *
+ * A logo that imports as three shapes when it was drawn with nine is worse
+ * than one that fails outright, because it looks like a finished import. Each
+ * case here was silent before.
+ */
+describe('silent losses', () => {
+  const wrap = (b: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${b}</svg>`;
+
+  it('keeps a line-art logo, which is mostly strokes', () => {
+    // Before: one shape, the single filled dot. The rest of the mark was gone.
+    const r = importSvg(wrap(`
+      <circle cx="50" cy="50" r="40" fill="none" stroke="#1d3f2b" stroke-width="4"/>
+      <path d="M30 60 L50 30 L70 60" fill="none" stroke="#1d3f2b" stroke-width="4"/>
+      <circle cx="50" cy="70" r="3" fill="#c8102e"/>`));
+    expect(r.shapes).toHaveLength(3);
+  });
+
+  it('draws a shape that is both filled and stroked as two shapes', () => {
+    const r = importSvg(wrap('<rect width="50" height="50" fill="#c8102e" stroke="#1d3f2b" stroke-width="2"/>'));
+    expect(r.shapes).toHaveLength(2);
+    expect(r.shapes[0]!.fill).toEqual([200, 16, 46]);
+    expect(r.shapes[1]!.fill).toEqual([29, 63, 43]);
+  });
+
+  it('resolves <use>, in both the xlink and the plain form', () => {
+    for (const href of ['xlink:href', 'href']) {
+      const r = importSvg(wrap(
+        `<defs><rect id="r" width="20" height="20" fill="#c8102e"/></defs>`
+        + `<use ${href}="#r" x="10" y="10"/>`));
+      expect(r.shapes).toHaveLength(1);
+      expect(r.shapes[0]!.fill).toEqual([200, 16, 46]);
+      // Placed by the use's own x/y, not left at the origin.
+      expect(Math.min(...r.shapes[0]!.subpaths[0]!.points.map((p) => p.x))).toBeCloseTo(10, 6);
+    }
+  });
+
+  it('resolves a <use> of a <symbol>, and does not call it uninterpreted', () => {
+    const r = importSvg(wrap(
+      '<symbol id="s"><rect width="20" height="20" fill="#c8102e"/></symbol><use href="#s"/>'));
+    expect(r.shapes).toHaveLength(1);
+    expect(r.warnings.join(' ')).not.toMatch(/symbol/);
+  });
+
+  it('cuts a <use> cycle instead of running out of stack', () => {
+    const r = importSvg(wrap('<g id="a"><use href="#a"/></g>'));
+    expect(r.warnings.join(' ')).toMatch(/itself/);
+  });
+
+  it('says when a <use> points at something the file does not contain', () => {
+    const r = importSvg(wrap('<use href="#missing"/>'));
+    expect(r.warnings.join(' ')).toMatch(/not in the file/);
+  });
+
+  it('does not drop an element over an unquoted or valueless attribute', () => {
+    expect(importSvg(wrap('<rect width=50 height=50 fill="#c8102e"/>')).shapes).toHaveLength(1);
+    expect(importSvg(wrap('<rect width="50" height="50" fill="#c8102e" data-flag/>')).shapes)
+      .toHaveLength(1);
+  });
+
+  it('warns that a clip is not applied rather than quietly over-drawing', () => {
+    const r = importSvg(wrap(
+      '<defs><clipPath id="c"><rect width="50" height="50"/></clipPath></defs>'
+      + '<circle cx="50" cy="50" r="40" fill="#c8102e" clip-path="url(#c)"/>'));
+    expect(r.warnings.join(' ')).toMatch(/clipping/);
+  });
+});
