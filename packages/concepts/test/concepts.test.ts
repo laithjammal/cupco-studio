@@ -3,7 +3,7 @@ import { deriveFrustum, CUP_8OZ } from '@cupco/geometry';
 import {
   generateConcepts, STRATEGIES, safeBounds, contrastRatio, luminance,
   chooseBackground, chooseForeground, isDark, shade, SEASONAL_CAMPAIGNS,
-  type ConceptInput,
+  type ConceptInput, type BrandColour,
 } from '../src/index';
 import { hexToRgb, motifAspect, type RGB, type MotifId } from '@cupco/vector';
 import { boundaryURange } from '@cupco/geometry';
@@ -12,7 +12,11 @@ const geom = deriveFrustum(CUP_8OZ.dimensions);
 
 const input = (over: Partial<ConceptInput> = {}): ConceptInput => ({
   artworkAspect: 0.5,
-  palette: [[232, 85, 45], [28, 63, 148], [255, 255, 255]],
+  palette: [
+    { rgb: [232, 85, 45], coverage: 0.5 },
+    { rgb: [28, 63, 148], coverage: 0.3 },
+    { rgb: [255, 255, 255], coverage: 0.2 },
+  ],
   profile: CUP_8OZ,
   geom,
   brandName: 'Cupco',
@@ -314,7 +318,7 @@ describe('seasonal concepts', () => {
   const geom = deriveFrustum(CUP_8OZ.dimensions);
   const inputFor = (aspect: number) => ({
     artworkAspect: aspect,
-    palette: [[30, 60, 120]] as RGB[],
+    palette: [{ rgb: [30, 60, 120] as RGB, coverage: 1 }],
     profile: CUP_8OZ,
     geom,
     brandName: 'BICYCLE',
@@ -455,12 +459,13 @@ describe('seasonal concepts', () => {
  */
 describe('January template', () => {
   const geom = deriveFrustum(CUP_8OZ.dimensions);
-  const jan = (palette: RGB[], artworkAspect = 1) =>
+  const jan = (palette: BrandColour[], artworkAspect = 1) =>
     generateConcepts({ artworkAspect, palette, profile: CUP_8OZ, geom, seed: 7 })
       .find((c) => c.id === 'season-january')!;
 
-  const GREEN: RGB[] = [[26, 77, 61]];
-  const ORANGE: RGB[] = [[232, 85, 45]];
+  const solid = (rgb: RGB): BrandColour[] => [{ rgb, coverage: 1 }];
+  const GREEN = solid([26, 77, 61]);
+  const ORANGE = solid([232, 85, 45]);
 
   const tpl = (c: ReturnType<typeof jan>) => c.placements.find((p) => p.kind === 'template')!;
   const mark = (c: ReturnType<typeof jan>) => c.placements[c.placements.length - 1]!;
@@ -479,37 +484,66 @@ describe('January template', () => {
     expect(tpl(jan(ORANGE)).color!.toLowerCase()).toBe('#e8552d');
   });
 
+  /**
+   * The bug this fixes: the accent came out a colour the café would not
+   * recognise. Saturation alone chose it, and the most saturated thing in a
+   * traced logo is routinely a fringe covering a fraction of a percent.
+   */
+  it('takes the brand colour, not the most saturated sliver', () => {
+    const brand: RGB = [232, 85, 45];
+    const c = tpl(jan([
+      { rgb: [20, 20, 20], coverage: 0.55 },   // the outline: no hue
+      { rgb: brand, coverage: 0.40 },          // the brand
+      { rgb: [255, 0, 255], coverage: 0.002 }, // a tracer fringe, fully saturated
+    ])).color!.toLowerCase();
+    expect(c).toBe('#e8552d');
+  });
+
+  it('still finds a colour in a mark made only of fine lines', () => {
+    // Every colour under the sliver floor - a line drawing. Falling back to
+    // grey here would be worse than taking the most saturated of them.
+    const c = tpl(jan([
+      { rgb: [255, 255, 255], coverage: 0.996 },
+      { rgb: [26, 77, 61], coverage: 0.004 },
+    ])).color!.toLowerCase();
+    expect(c).toBe('#1a4d3d');
+  });
+
   it('leaves a greyscale logo neutral rather than inventing a hue', () => {
-    const c = tpl(jan([[15, 15, 15], [240, 240, 240]])).color!;
+    const c = tpl(jan([{ rgb: [15, 15, 15], coverage: 0.6 }, { rgb: [240, 240, 240], coverage: 0.4 }])).color!;
     const n = parseInt(c.slice(1), 16);
     const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
     expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThan(10);
   });
 
   /**
-   * Fitted by WIDTH, so the whole illustration is on the blank.
+   * Fitted to the VISIBLE CUP, not to the blank.
    *
-   * The artwork is proportionally taller than the wrap, so one axis has to
-   * overhang. Fitting by height made it 25% wider than the blank and threw
-   * the right-hand lettering off the edge - so the width is what is matched,
-   * exactly, and the overhang goes to the top and bottom instead.
+   * The blank is 37% taller than the cup wall - top curl, base tuck and
+   * bleed. Artwork drawn edge to edge on the blank therefore shows only its
+   * middle 73% once the cup is made, which reads as far too big. So the
+   * illustration's HEIGHT is matched to v 0..1 and the width it leaves over
+   * is filled by the design's own cream background.
    */
-  it('spans the blank exactly, edge to edge', () => {
-    const t = tpl(jan(GREEN));
-    const u = boundaryURange(CUP_8OZ, geom, 'bleed');
-    const uLeft = Math.min(u.atTop.uLeft, u.atBottom.uLeft);
-    const uRight = Math.max(u.atTop.uRight, u.atBottom.uRight);
-    expect(t.u - t.widthU! / 2).toBeCloseTo(uLeft, 6);
-    expect(t.u + t.widthU! / 2).toBeCloseTo(uRight, 6);
-    expect(t.bleeds).toBe(true);
-  });
-
-  it('still covers the cup top to bottom, with the overhang there instead', () => {
+  it('shows the WHOLE illustration on the visible cup wall', () => {
     const t = tpl(jan(GREEN));
     const { widthPx, heightPx } = CUP_8OZ.designCanvas;
     const heightV = t.widthU! * (848 / 1855) * (widthPx / heightPx);
-    expect(t.v - heightV / 2).toBeLessThan(0);
-    expect(t.v + heightV / 2).toBeGreaterThan(1);
+    // Not merely "covers the cup" - nothing may be cropped off either end.
+    expect(t.v - heightV / 2).toBeCloseTo(0, 6);
+    expect(t.v + heightV / 2).toBeCloseTo(1, 6);
+  });
+
+  it('clears the glue seam on both sides', () => {
+    // The lap hides the last few percent of the circumference. The artwork
+    // carries lettering at its right edge, so it has to finish well short of
+    // the seam rather than merely fit the blank.
+    const t = tpl(jan(GREEN));
+    const left = t.u - t.widthU! / 2;
+    const right = t.u + t.widthU! / 2;
+    const seam = CUP_8OZ.seam.overlapMm / (Math.PI * CUP_8OZ.dimensions.topDiameterMm);
+    expect(left).toBeGreaterThan(seam);
+    expect(right).toBeLessThan(1 - seam);
   });
 
   it('centres the design on the CUP, not on the blank', () => {

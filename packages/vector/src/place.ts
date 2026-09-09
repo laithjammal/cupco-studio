@@ -107,3 +107,29 @@ export function placeArtwork(
     })),
   }));
 }
+
+/**
+ * The area a shape covers, in unit-box units.
+ *
+ * Signed by the shoelace formula and summed across subpaths, so a hole wound
+ * the opposite way to its outer ring subtracts rather than adds - an "O"
+ * counts as the ring, not as the ring plus the counter.
+ *
+ * This is what lets a palette say how MUCH of a logo a colour occupies.
+ * Counting shapes instead would let a traced logo's hundred antialiased
+ * slivers outvote the two paths carrying the brand colour.
+ */
+export function shapeArea(
+  subpaths: readonly { x: number; y: number }[][],
+): number {
+  let total = 0;
+  for (const sp of subpaths) {
+    let a = 0;
+    for (let i = 0, j = sp.length - 1; i < sp.length; j = i++) {
+      const p = sp[i]!, q = sp[j]!;
+      a += (q.x + p.x) * (q.y - p.y);
+    }
+    total += a / 2;
+  }
+  return Math.abs(total);
+}

@@ -14,7 +14,7 @@ import { TEMPLATES, templateAssetId, templateFromAssetId } from '../src/lib/temp
 
 const geom = deriveFrustum(CUP_8OZ.dimensions);
 const january = () =>
-  generateConcepts({ artworkAspect: 1, palette: [[26, 77, 61]], profile: CUP_8OZ, geom, seed: 7 })
+  generateConcepts({ artworkAspect: 1, palette: [{ rgb: [26, 77, 61], coverage: 1 }], profile: CUP_8OZ, geom, seed: 7 })
     .find((c) => c.id === 'season-january')!;
 
 describe('the January template', () => {

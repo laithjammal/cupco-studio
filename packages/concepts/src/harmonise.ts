@@ -17,6 +17,7 @@
  * looks like the café it came from.
  */
 import type { RGB } from '@cupco/vector';
+import type { BrandColour } from './types';
 import { toHex } from './contrast';
 
 export interface ScenePalette {
@@ -73,20 +74,51 @@ function fromHsl(h: number, s: number, l: number): RGB {
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 /**
- * The hue to build a scene around.
+ * A colour too small to be the brand.
  *
- * The MOST SATURATED colour, not the most used. A logo's commonest colour is
- * very often its black outline or its white ground, neither of which says
- * anything about the brand; the saturated one is the brand colour.
+ * Half a percent of the artwork. Below this a colour is a fringe, a stray
+ * anchor, or a tracer artefact - never the mark's identity.
  */
-function subjectHue(palette: RGB[]): { h: number; s: number; rgb: RGB | null } {
+const SLIVER = 0.005;
+
+/**
+ * How much coverage counts towards being the brand colour.
+ *
+ * Saturation alone is wrong: a traced logo's antialiased edge is frequently
+ * the most saturated colour in the file. Raw coverage alone is also wrong: the
+ * commonest colour is usually the black outline or the white ground.
+ *
+ * So the two are combined, with coverage deliberately FLATTENED by a fourth
+ * root. That leaves saturation as the main signal - which is what identifies a
+ * brand colour - while still letting a large pale wash beat a saturated
+ * sliver. A linear weighting would hand every decision to whichever colour
+ * happens to fill the background.
+ */
+const presence = (coverage: number) => Math.pow(Math.max(0, coverage), 0.25);
+
+/**
+ * The colour to build a scene around.
+ *
+ * Scored on saturation weighted by presence, having first thrown away
+ * near-black and near-white (which carry a hue but no intent) and anything
+ * below a sliver's worth of the artwork.
+ */
+function subjectHue(palette: readonly BrandColour[]): { h: number; s: number; rgb: RGB | null } {
   let best: { h: number; s: number; rgb: RGB | null } = { h: 0, s: 0, rgb: null };
-  for (const rgb of palette) {
-    const { h, s, l } = toHsl(rgb);
-    // Near-black and near-white carry a hue but no intent.
-    if (l < 0.06 || l > 0.96) continue;
-    if (s > best.s) best = { h, s, rgb };
-  }
+  let bestScore = 0;
+  const consider = (list: readonly BrandColour[], floor: number) => {
+    for (const c of list) {
+      const { h, s, l } = toHsl(c.rgb);
+      if (l < 0.06 || l > 0.96) continue;
+      if (c.coverage < floor) continue;
+      const score = s * presence(c.coverage);
+      if (score > bestScore) { bestScore = score; best = { h, s, rgb: c.rgb }; }
+    }
+  };
+  consider(palette, SLIVER);
+  // A mark made entirely of slivers - a fine line drawing - still has a brand
+  // colour. Better to take its most saturated one than to fall back to grey.
+  if (!best.rgb) consider(palette, 0);
   return best;
 }
 
@@ -97,7 +129,7 @@ function subjectHue(palette: RGB[]): { h: number; s: number; rgb: RGB | null } {
  * a neutral scheme rather than an invented hue. Choosing a colour for a
  * customer who did not choose one is worse than leaving it grey.
  */
-export function harmonise(palette: RGB[]): ScenePalette {
+export function harmonise(palette: readonly BrandColour[]): ScenePalette {
   const { h, s, rgb } = subjectHue(palette);
   return {
     ground: toHex(fromHsl(h, clamp(s * 0.3, 0, 0.16), 0.955)),

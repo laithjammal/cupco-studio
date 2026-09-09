@@ -10,11 +10,26 @@
 import type { CupProfile, FrustumGeometry } from '@cupco/geometry';
 import type { RGB } from '@cupco/vector';
 
+/**
+ * One colour found in the uploaded artwork, with how much of it that colour
+ * covers.
+ *
+ * Coverage is carried rather than dropped because saturation alone picks the
+ * wrong colour: a traced logo's antialiased fringe is often the most saturated
+ * thing in the file while occupying a fraction of a percent of it. A colour
+ * without its coverage cannot say whether it is the brand or an artefact.
+ */
+export interface BrandColour {
+  rgb: RGB;
+  /** Share of the artwork's area, 0-1. */
+  coverage: number;
+}
+
 export interface ConceptInput {
   /** Height / width of the uploaded artwork. */
   artworkAspect: number;
-  /** Colours found in the artwork, most-used first. */
-  palette: RGB[];
+  /** Colours found in the artwork, most-covering first. */
+  palette: readonly BrandColour[];
   profile: CupProfile;
   geom: FrustumGeometry;
   /** Optional brand name, used by strategies that pair a mark with type. */

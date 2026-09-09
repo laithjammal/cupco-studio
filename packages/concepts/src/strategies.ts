@@ -11,13 +11,25 @@
  */
 
 import { chooseBackground, chooseForeground, isDark, shade, toHex } from './contrast';
-import { safeBounds, type ConceptInput, type ConceptLayout, type ConceptStrategy, type Placement } from './types';
+import {
+  safeBounds,
+  type BrandColour, type ConceptInput, type ConceptLayout, type ConceptStrategy, type Placement,
+} from './types';
 import type { RGB } from '@cupco/vector';
 import { SEASONAL_STRATEGIES } from './seasonal';
 
+/**
+ * The palette as bare colours.
+ *
+ * Contrast pairing only asks which colours are available and how they read
+ * against one another - coverage is not part of that judgement, so it is
+ * dropped here rather than threaded through every helper.
+ */
+const hues = (palette: readonly BrandColour[]): RGB[] => palette.map((c) => c.rgb);
+
 /** Dominant artwork colour, falling back to a neutral when there is none. */
 function subjectColour(input: ConceptInput): RGB {
-  return input.palette[0] ?? [40, 40, 40];
+  return input.palette[0]?.rgb ?? [40, 40, 40];
 }
 
 /**
@@ -63,7 +75,7 @@ const centred: ConceptStrategy = {
   label: 'Centred',
   generate(input) {
     const subject = subjectColour(input);
-    const bg = chooseBackground(input.palette, subject);
+    const bg = chooseBackground(hues(input.palette), subject);
     const widthU = widthForHeight(0.26, input);
     return {
       id: 'centred',
@@ -83,7 +95,7 @@ const oversized: ConceptStrategy = {
   label: 'Oversized',
   generate(input) {
     const subject = subjectColour(input);
-    const bg = chooseBackground(input.palette, subject);
+    const bg = chooseBackground(hues(input.palette), subject);
     // Deliberately larger than the safe area: the mark bleeds off the sides,
     // which reads as confident rather than cropped.
     const widthU = Math.min(1.35, widthForHeight(0.62, input));
@@ -102,7 +114,7 @@ const repeatGrid: ConceptStrategy = {
   label: 'Repeating pattern',
   generate(input) {
     const subject = subjectColour(input);
-    const bg = chooseBackground(input.palette, subject);
+    const bg = chooseBackground(hues(input.palette), subject);
     const cols = 4, rows = 3;
     const widthU = Math.min(0.16, widthForHeight(0.13, input));
     const s = safeBounds(input.profile, input.geom);
@@ -134,7 +146,7 @@ const diagonal: ConceptStrategy = {
   label: 'Diagonal repeat',
   generate(input) {
     const subject = subjectColour(input);
-    const bg = chooseBackground(input.palette, subject);
+    const bg = chooseBackground(hues(input.palette), subject);
     const widthU = Math.min(0.19, widthForHeight(0.15, input));
     const s = safeBounds(input.profile, input.geom);
     const placements: Placement[] = [];
@@ -162,10 +174,10 @@ const colourBlock: ConceptStrategy = {
   label: 'Two-tone block',
   generate(input) {
     const subject = subjectColour(input);
-    const upper = chooseBackground(input.palette, subject);
+    const upper = chooseBackground(hues(input.palette), subject);
     // A true second field rather than a stripe: the lower two-fifths of the
     // cup is a contrasting colour, so the cup reads as two-tone in the hand.
-    const lower = chooseForeground(upper, input.palette);
+    const lower = chooseForeground(upper, hues(input.palette));
     const widthU = widthForHeight(0.19, input);
     const splitAt = 0.4;
 
@@ -196,8 +208,8 @@ const bandStripe: ConceptStrategy = {
   label: 'Ruled band',
   generate(input) {
     const subject = subjectColour(input);
-    const bg = chooseBackground(input.palette, subject);
-    const rule = chooseForeground(bg, input.palette);
+    const bg = chooseBackground(hues(input.palette), subject);
+    const rule = chooseForeground(bg, hues(input.palette));
     const widthU = widthForHeight(0.2, input);
     const centre = 0.56;
     const markH = heightOf(widthU, input);
@@ -283,7 +295,7 @@ const markAndQr: ConceptStrategy = {
   label: 'Mark and QR',
   generate(input) {
     const subject = subjectColour(input);
-    const bg = chooseBackground(input.palette, subject);
+    const bg = chooseBackground(hues(input.palette), subject);
     const widthU = widthForHeight(0.2, input);
     const v = 0.55;
     // A QR must stay square and large enough to scan off a curved surface.
@@ -321,8 +333,8 @@ const wordmark: ConceptStrategy = {
   generate(input) {
     const name = (input.brandName ?? '').trim() || 'Type Your Name';
     const subject = subjectColour(input);
-    const bg = chooseBackground(input.palette, subject);
-    const fg = chooseForeground(bg, input.palette);
+    const bg = chooseBackground(hues(input.palette), subject);
+    const fg = chooseForeground(bg, hues(input.palette));
     const widthU = widthForHeight(0.22, input);
     const markV = 0.62;
 

@@ -10,7 +10,7 @@
 
 import { deriveFrustum, type CupProfile } from '@cupco/geometry';
 import {
-  extractPalette, hexToRgb, dropBackgroundPlate, recolourArtwork,
+  extractPalette, hexToRgb, dropBackgroundPlate, recolourArtwork, shapeArea,
   buildMotifArtwork,
   type PlacedArtwork, type RGB, type MotifId,
 } from '@cupco/vector';
@@ -36,10 +36,15 @@ export function conceptInputFor(
   profile: CupProfile,
   brandName?: string,
 ): ConceptInput {
-  const palette = extractPalette(source.art.shapes.map((s) => ({ fill: s.fill })));
+  // Weighted by AREA, not by shape count. A traced logo routinely emits a
+  // hundred antialiased slivers around two paths carrying the brand colour;
+  // counting shapes lets the slivers outvote the mark.
+  const palette = extractPalette(source.art.shapes.map((s) => ({
+    fill: s.fill, weight: shapeArea(s.subpaths),
+  })));
   return {
     artworkAspect: source.art.aspect,
-    palette: palette.map((p) => p.rgb),
+    palette: palette.map((p) => ({ rgb: p.rgb, coverage: p.coverage })),
     profile,
     geom: deriveFrustum(profile.dimensions),
     brandName,
