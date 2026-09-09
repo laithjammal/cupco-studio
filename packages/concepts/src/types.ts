@@ -54,11 +54,23 @@ export interface Placement {
   heightV?: number;
   /** 0-1. */
   opacity?: number;
+  /**
+   * This element is MEANT to run off an edge of the cup.
+   *
+   * A sea, a snow line, a sun cropped by the rim: each is deliberately outside
+   * the safe area, and saying so in the data is better than a checker keeping
+   * a list of which motif ids are allowed to. Without it, "everything must sit
+   * inside safe" is either wrong or has to be quietly weakened.
+   */
+  bleeds?: boolean;
   text?: string;
   /** Hex. */
   color?: string;
   tracking?: number;
   weight?: number;
+  /** text: a font id from the app's FONT_CHOICES. Defaults to the app's own. */
+  fontFamily?: string;
+  italic?: boolean;
   /** qr: placeholder shown until the customer supplies their own URL. */
   placeholderUrl?: string;
   /**

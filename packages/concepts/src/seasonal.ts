@@ -22,6 +22,7 @@
  */
 
 import { isDark, toHex } from './contrast';
+import { january } from './january';
 import {
   safeBounds, type ConceptInput, type ConceptLayout, type ConceptStrategy, type Placement,
 } from './types';
@@ -86,20 +87,6 @@ interface SeasonSpec {
 /* -------------------------------------------------------------------------- */
 
 const SEASONS: SeasonSpec[] = [
-  {
-    id: 'season-january', label: 'January — New Year', month: 'JANUARY',
-    description: 'Fresh start. Confetti and sparkles over deep ink, with the mark centre stage.',
-    scene: { ground: '#101828', primary: '#f4d58d', ink: '#ffffff', accent: '#e8705a', secondary: '#7bb0d6', type: '#ffffff' },
-    headline: 'HELLO 2027', subhead: 'a fresh start',
-    logoV: 0.52, logoHeightV: 0.3,
-    scatter: [
-      { motif: 'star', widthU: 0.09, at: [[0.13, 0.8], [0.87, 0.78]], colors: { primary: '#f4d58d' } },
-      { motif: 'sparkle', widthU: 0.07, at: [[0.3, 0.88], [0.7, 0.9], [0.06, 0.55], [0.94, 0.52]] },
-      { motif: 'confetti', widthU: 0.075, rotation: 24, at: [[0.2, 0.68], [0.8, 0.66], [0.44, 0.92]], colors: { primary: '#e8705a' } },
-      { motif: 'confetti', widthU: 0.075, rotation: -38, at: [[0.1, 0.32], [0.9, 0.3], [0.58, 0.92]], colors: { primary: '#7bb0d6' } },
-      { motif: 'sparkle', widthU: 0.05, at: [[0.26, 0.2], [0.74, 0.2]], colors: { primary: '#f4d58d' } },
-    ],
-  },
   {
     id: 'season-february', label: 'February — Valentine’s Day', month: 'FEBRUARY',
     description: 'Made with love. A blush ground, a fall of hearts and a clear band for the mark.',
@@ -336,7 +323,7 @@ function layoutFor(spec: SeasonSpec, input: ConceptInput): ConceptLayout {
       placements.push({
         kind: 'motif', motif: 'drift', motifColors: colorsFor({ primary: spec.drift.color }),
         u: 0.5, v: groundTop - motifHeightV('drift', w, input) * 0.24,
-        rotation: 0, widthU: w,
+        rotation: 0, widthU: w, bleeds: true,
       });
       groundTop += motifHeightV('drift', w, input) * 0.16;
     }
@@ -405,13 +392,23 @@ function hexToRgbLocal(h: string): RGB {
 }
 
 /** Every seasonal concept, in calendar order. */
-export const SEASONAL_STRATEGIES: ConceptStrategy[] = SEASONS.map((spec) => ({
-  id: spec.id,
-  label: spec.label,
-  generate: (input) => layoutFor(spec, input),
-}));
+export const SEASONAL_STRATEGIES: ConceptStrategy[] = [
+  // January is a full template rather than a table row: it takes its colours
+  // from the uploaded logo and reserves a place for it, which the shared
+  // scatter-and-band shape below cannot express.
+  january,
+  ...SEASONS.map((spec) => ({
+    id: spec.id,
+    label: spec.label,
+    generate: (input: ConceptInput) => layoutFor(spec, input),
+  })),
+];
 
 /** The campaign calendar, for a UI that wants to group or filter by month. */
-export const SEASONAL_CAMPAIGNS = SEASONS.map((s) => ({
-  id: s.id, label: s.label, month: s.month, description: s.description,
-}));
+export const SEASONAL_CAMPAIGNS = [
+  { id: 'season-january', label: 'January — New Year', month: 'JANUARY',
+    description: 'Hello 2027: a summer New Year, coloured from the uploaded logo.' },
+  ...SEASONS.map((s) => ({
+    id: s.id, label: s.label, month: s.month, description: s.description,
+  })),
+];

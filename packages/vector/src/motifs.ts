@@ -22,7 +22,8 @@ export type MotifId =
   | 'snowflake' | 'snowman' | 'heart' | 'leaf' | 'poppy' | 'egg' | 'bunny'
   | 'flower' | 'pumpkin' | 'ghost' | 'bat' | 'tree' | 'gift' | 'bauble'
   | 'holly' | 'cup' | 'steam' | 'bean' | 'star' | 'sparkle' | 'sun'
-  | 'cloud' | 'drift' | 'moustache' | 'medal' | 'confetti';
+  | 'cloud' | 'drift' | 'moustache' | 'medal' | 'confetti'
+  | 'palm' | 'frond' | 'wave' | 'sunburst' | 'sunrays' | 'bird' | 'dot';
 
 /** The colours a motif draws with. Supplied by the concept, not chosen here. */
 export interface MotifPalette {
@@ -535,6 +536,136 @@ function build(id: MotifId): Part[] {
 
     case 'confetti':
       return [{ rings: [roundRect(-0.5, -0.16, 0.5, 0.16, 0.08)], role: 'primary' }];
+
+    case 'dot':
+      return [{ rings: [circle(0, 0, 0.5)], role: 'primary' }];
+
+    case 'palm': {
+      // A leaning trunk with fronds fanning off the top. The fronds are
+      // drawn as tapered blades with a notched edge, which is what makes a
+      // palm read as a palm rather than as a starburst.
+      const trunk: Pt[] = [];
+      for (let i = 0; i <= 20; i++) {
+        const t = i / 20;
+        trunk.push({ x: -0.16 * t + 0.1 * t * t, y: 1.2 - t * 1.2 });
+      }
+      const trunkRing = strokeToRing(trunk, 0.09);
+      const fronds: Pt[][] = [];
+      const ANGLES = [-2.85, -2.35, -1.95, -1.35, -0.85, -0.35];
+      for (const a of ANGLES) {
+        const len = 0.78 + 0.18 * Math.abs(Math.cos(a));
+        const spine: Pt[] = [];
+        for (let i = 0; i <= 18; i++) {
+          const t = i / 18;
+          // Fronds arch: they leave the crown upward then fall away.
+          const droop = 0.34 * t * t;
+          spine.push({ x: Math.cos(a) * len * t, y: -0.02 + Math.sin(a) * len * t + droop });
+        }
+        const top: Pt[] = [], bot: Pt[] = [];
+        for (let i = 0; i < spine.length; i++) {
+          const t = i / (spine.length - 1);
+          const wide = 0.15 * Math.sin(Math.PI * Math.min(1, t * 1.15)) ** 0.6;
+          const notch = 1 + 0.42 * Math.sin(t * Math.PI * 9);   // the serrated edge
+          const prev = spine[Math.max(0, i - 1)]!, next = spine[Math.min(spine.length - 1, i + 1)]!;
+          let dx = next.x - prev.x, dy = next.y - prev.y;
+          const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+          top.push({ x: spine[i]!.x - dy * wide * notch, y: spine[i]!.y + dx * wide * notch });
+          bot.push({ x: spine[i]!.x + dy * wide * notch, y: spine[i]!.y - dx * wide * notch });
+        }
+        const ring = [...top, ...bot.reverse()];
+        ring.push({ ...ring[0]! });
+        fronds.push(ring);
+      }
+      return [{ rings: [trunkRing, ...fronds], role: 'primary' }];
+    }
+
+    case 'frond': {
+      // A long smooth blade, the kind that fills a corner. Serrating it made
+      // it read as a caterpillar rather than a leaf, so the edge is clean and
+      // the shape does the work.
+      const spine: Pt[] = [];
+      for (let i = 0; i <= 30; i++) {
+        const t = i / 30;
+        spine.push({ x: 0.42 * Math.sin(t * 1.25), y: 1 - t * 2 });
+      }
+      const top: Pt[] = [], bot: Pt[] = [];
+      for (let i = 0; i < spine.length; i++) {
+        const t = i / (spine.length - 1);
+        // Broad low down, drawn to a point at the tip.
+        const wide = 0.4 * Math.sin(Math.PI * t) ** 0.75 * (1 - t * 0.25);
+        const prev = spine[Math.max(0, i - 1)]!, next = spine[Math.min(spine.length - 1, i + 1)]!;
+        let dx = next.x - prev.x, dy = next.y - prev.y;
+        const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+        top.push({ x: spine[i]!.x - dy * wide, y: spine[i]!.y + dx * wide });
+        bot.push({ x: spine[i]!.x + dy * wide, y: spine[i]!.y - dx * wide });
+      }
+      const ring = [...top, ...bot.reverse()];
+      ring.push({ ...ring[0]! });
+      return [{ rings: [ring], role: 'primary' }];
+    }
+
+    case 'wave': {
+      // WIDE and SHALLOW on purpose. Design space is angular and the canvas is
+      // 2.6 times wider than it is tall, so a motif's height on the cup is its
+      // width times its aspect times that ratio. A wave with the proportions
+      // it has on paper would come out taller than the whole cup once it was
+      // stretched across the wrap.
+      const p: Pt[] = [];
+      for (let i = 0; i <= 140; i++) {
+        const t = i / 140;
+        const x = -1 + t * 2;
+        // Two frequencies, so the crest is not a plain sine.
+        const y = -0.055 * Math.sin(t * Math.PI * 2.2) - 0.028 * Math.sin(t * Math.PI * 5.3 + 1.1);
+        p.push({ x, y });
+      }
+      p.push({ x: 1, y: 0.14 }, { x: -1, y: 0.14 }, { ...p[0]! });
+      return [{ rings: [p], role: 'primary' }];
+    }
+
+    case 'sunburst': {
+      // Rays radiating from a hollow centre — the halo a headline sits inside.
+      const rays: Pt[][] = [];
+      const N = 26;
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * TAU;
+        // Longer at the top, so the burst reads as light from above.
+        const len = 0.72 + 0.28 * Math.max(0, -Math.sin(a));
+        rays.push(strokeToRing([
+          { x: Math.cos(a) * 0.44, y: Math.sin(a) * 0.44 },
+          { x: Math.cos(a) * len, y: Math.sin(a) * len },
+        ], 0.035));
+      }
+      return [{ rings: rays, role: 'primary' }];
+    }
+
+    case 'sunrays': {
+      const rays: Pt[][] = [];
+      const N = 22;
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * TAU;
+        rays.push(strokeToRing([
+          { x: Math.cos(a) * 0.46, y: Math.sin(a) * 0.46 },
+          { x: Math.cos(a) * (0.78 + 0.22 * (i % 2)), y: Math.sin(a) * (0.78 + 0.22 * (i % 2)) },
+        ], 0.05));
+      }
+      return [
+        { rings: [circle(0, 0, 0.4)], role: 'primary' },
+        { rings: rays, role: 'primary' },
+      ];
+    }
+
+    case 'bird': {
+      // Two arcs meeting — the gull every illustrator draws.
+      const wing = (s2: number): Pt[] => {
+        const p: Pt[] = [];
+        for (let i = 0; i <= 16; i++) {
+          const t = i / 16;
+          p.push({ x: s2 * t, y: -0.34 * Math.sin(t * Math.PI * 0.62) });
+        }
+        return strokeToRing(p, 0.1);
+      };
+      return [{ rings: [wing(-1), wing(1)], role: 'primary' }];
+    }
   }
 }
 

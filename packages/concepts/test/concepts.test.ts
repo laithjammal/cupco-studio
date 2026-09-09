@@ -157,7 +157,7 @@ describe('placements stay manufacturable', () => {
         // A ground is the exception, and deliberately so: a snow line or a
         // meadow has to run off the base of the cup rather than stop at it,
         // so its centre sits below v=0 by design.
-        const isGround = p.kind === 'band' || p.motif === 'drift';
+        const isGround = p.kind === 'band' || p.bleeds;
         if (!isGround) {
           expect(p.v).toBeGreaterThanOrEqual(0);
           expect(p.v).toBeLessThanOrEqual(1);
@@ -389,9 +389,11 @@ describe('seasonal concepts', () => {
     const { widthPx, heightPx } = CUP_8OZ.designCanvas;
     for (const aspect of [0.3, 1, 2.5]) {
       for (const c of seasons(aspect)) {
-        // The snow line is exempt: like the band beneath it, a ground is
-        // SUPPOSED to run off the base of the cup rather than stop at a line.
-        for (const p of c.placements.filter((x) => x.kind === 'motif' && x.motif !== 'drift')) {
+        // Anything the layout MARKED as bleeding is exempt - a sea, a snow
+        // line, a sun cropped by the rim. The exemption comes from the data
+        // rather than from a list of ids kept here, so a new motif meant to
+        // run off an edge does not need this test edited.
+        for (const p of c.placements.filter((x) => x.kind === 'motif' && !x.bleeds)) {
           const halfV = (p.widthU! * motifAspect(p.motif as MotifId) * (widthPx / heightPx)) / 2;
           expect(p.v + halfV).toBeLessThanOrEqual(s.vTop + 1e-9);
           expect(p.v - halfV).toBeGreaterThanOrEqual(s.vBottom - 1e-9);
@@ -434,5 +436,90 @@ describe('seasonal concepts', () => {
       expect(c.description.length).toBeGreaterThan(20);
       expect(c.background).toMatch(/^#[0-9a-f]{6}$/i);
     }
+  });
+});
+
+/**
+ * JANUARY — the one built from a supplied template.
+ *
+ * The composition is fixed; the colours are not. What is worth asserting is
+ * exactly that split: the same scene every time, in the uploaded logo's own
+ * hue, with the mark in its reserved place and nothing painted over it.
+ */
+describe('January template', () => {
+  const geom = deriveFrustum(CUP_8OZ.dimensions);
+  const jan = (palette: RGB[]) =>
+    generateConcepts({ artworkAspect: 1, palette, profile: CUP_8OZ, geom, seed: 7 })
+      .find((c) => c.id === 'season-january')!;
+
+  const GREEN: RGB[] = [[26, 77, 61]];
+  const ORANGE: RGB[] = [[232, 85, 45]];
+
+  it('takes its colours from the uploaded logo', () => {
+    const a = jan(GREEN), b = jan(ORANGE);
+    expect(a.background).not.toBe(b.background);
+    // Every colour in the scene moves with the logo, not just the ground.
+    const colours = (c: typeof a) => new Set(
+      c.placements.flatMap((p) => [p.color, p.motifColors?.primary]).filter(Boolean),
+    );
+    for (const col of colours(a)) expect(colours(b).has(col)).toBe(false);
+  });
+
+  it('builds a light ground and a dark ink from that one hue', () => {
+    const c = jan(GREEN);
+    const ground = luminance(hexToRgb(c.background));
+    const inks = c.placements.filter((p) => p.kind === 'text').map((p) => luminance(hexToRgb(p.color!)));
+    expect(ground).toBeGreaterThan(0.8);
+    for (const l of inks) expect(l).toBeLessThan(0.2);
+  });
+
+  /**
+   * A logo with no colour in it must not be given one. Choosing a hue for a
+   * customer who did not choose one is worse than leaving it neutral.
+   */
+  it('leaves a greyscale logo neutral rather than inventing a hue', () => {
+    const c = jan([[15, 15, 15], [240, 240, 240]]);
+    const bg = hexToRgb(c.background);
+    const spread = Math.max(...bg) - Math.min(...bg);
+    expect(spread).toBeLessThan(12);
+  });
+
+  it('reserves a place for the mark, and paints it LAST', () => {
+    const c = jan(GREEN);
+    const last = c.placements[c.placements.length - 1]!;
+    expect(last.kind).toBe('artwork');
+    // Top centre, where the template puts its ring.
+    expect(last.u).toBeCloseTo(0.5, 2);
+    expect(last.v).toBeGreaterThan(0.75);
+    expect(last.treatment?.dropPlate).toBe(true);
+  });
+
+  it('sizes the mark by HEIGHT, so a wide logo does not swallow the cup', () => {
+    const wide = generateConcepts({ artworkAspect: 0.2, palette: GREEN, profile: CUP_8OZ, geom })
+      .find((c) => c.id === 'season-january')!;
+    const tall = generateConcepts({ artworkAspect: 3, palette: GREEN, profile: CUP_8OZ, geom })
+      .find((c) => c.id === 'season-january')!;
+    const h = (c: typeof wide, aspect: number) => {
+      const a = c.placements[c.placements.length - 1]!;
+      return a.widthU! * aspect * (CUP_8OZ.designCanvas.widthPx / CUP_8OZ.designCanvas.heightPx);
+    };
+    // Both land on the same printed height, whatever shape the logo is.
+    expect(h(wide, 0.2)).toBeCloseTo(h(tall, 3), 2);
+  });
+
+  it('draws the sea across the whole wrap, with no bare edge', () => {
+    const c = jan(GREEN);
+    const waves = c.placements.filter((p) => p.motif === 'wave');
+    expect(waves.length).toBe(3);
+    for (const w of waves) {
+      // Centred and wider than the cup: a wave shifted sideways instead would
+      // slide off one seam and leave the other bare, which it once did.
+      expect(w.u).toBeCloseTo(0.5, 6);
+      expect(w.widthU!).toBeGreaterThan(1);
+    }
+  });
+
+  it('is deterministic', () => {
+    expect(JSON.stringify(jan(GREEN))).toBe(JSON.stringify(jan(GREEN)));
   });
 });

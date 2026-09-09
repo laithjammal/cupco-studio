@@ -106,6 +106,8 @@ export function materialiseConcept(
         color: p.color ?? el.color,
         tracking: p.tracking ?? 0,
         weight: p.weight ?? el.weight,
+        fontFamily: p.fontFamily ?? el.fontFamily,
+        italic: p.italic ?? el.italic,
         opacity: p.opacity ?? 1,
       });
     } else if (p.kind === 'motif') {
