@@ -20,8 +20,9 @@ import {
 } from '@cupco/concepts';
 import {
   createBandElement, createTextElement, createVectorElement, createQrElement,
-  renderDesign, type Design, type DesignElement,
+  createImageElement, renderDesign, type Design, type DesignElement,
 } from './design';
+import { getPreparedTemplate, prepareTemplate, templateAssetId } from './template-art';
 import type { ArtworkTreatment } from '@cupco/concepts';
 
 export interface ConceptSource {
@@ -87,6 +88,25 @@ function treatArtwork(art: PlacedArtwork, treatment?: ArtworkTreatment): PlacedA
 }
 
 /** Materialise one layout into a fully editable design document. */
+/**
+ * Build every recoloured template a set of concepts needs.
+ *
+ * Awaited before the gallery renders, so materialiseConcept can stay
+ * synchronous - it is called from a click handler and from a thumbnail render,
+ * and making both async to serve one raster template would be the tail wagging
+ * the dog.
+ */
+export async function prepareConceptTemplates(layouts: ConceptLayout[]): Promise<void> {
+  const wanted = new Map<string, string>();
+  for (const l of layouts) {
+    for (const p of l.placements) {
+      if (p.kind === 'template' && p.template) wanted.set(`${p.template}|${p.color}`, p.template);
+    }
+  }
+  await Promise.all([...wanted.entries()].map(([key, id]) =>
+    prepareTemplate(id, key.split('|')[1] ?? '#888888').catch(() => null)));
+}
+
 export function materialiseConcept(
   layout: ConceptLayout,
   source: ConceptSource,
@@ -108,6 +128,21 @@ export function materialiseConcept(
         weight: p.weight ?? el.weight,
         fontFamily: p.fontFamily ?? el.fontFamily,
         italic: p.italic ?? el.italic,
+        opacity: p.opacity ?? 1,
+      });
+    } else if (p.kind === 'template') {
+      // The recoloured artwork must already be prepared - see
+      // prepareConceptTemplates, which the gallery awaits before rendering.
+      // Skipped rather than drawn wrong if it is not: half a template is
+      // worse than none.
+      const img = getPreparedTemplate(p.template!, p.color ?? '#888888');
+      if (!img) continue;
+      const el = createImageElement(img, 'January template',
+        templateAssetId(p.template!, p.color ?? '#888888'));
+      elements.push({
+        ...el,
+        u: p.u, v: p.v, rotation: p.rotation,
+        widthU: p.widthU ?? el.widthU,
         opacity: p.opacity ?? 1,
       });
     } else if (p.kind === 'motif') {

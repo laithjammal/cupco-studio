@@ -13,6 +13,7 @@ import type { CupProfile } from '@cupco/geometry';
 import type { ConceptLayout } from '@cupco/concepts';
 import {
   conceptsFor, materialiseConcept, renderConceptThumbnail, conceptSwatches,
+  prepareConceptTemplates,
   type ConceptSource,
 } from '@/lib/concepts-adapter';
 import type { Design } from '@/lib/design';
@@ -27,13 +28,15 @@ export interface ConceptGalleryProps {
 const THUMB_W = 300;
 
 function Thumbnail({
-  layout, source, selected, onSelect, onApply,
+  layout, source, selected, onSelect, onApply, ready,
 }: {
   layout: ConceptLayout;
   source: ConceptSource;
   selected: boolean;
   onSelect: () => void;
   onApply: () => void;
+  /** Bumped when a recoloured template finishes, to redraw the thumbnail. */
+  ready: number;
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const h = Math.round(THUMB_W * 0.392); // matches the design canvas ratio
@@ -47,7 +50,7 @@ function Thumbnail({
     canvas.style.height = 'auto';
     canvas.style.display = 'block';
     el.replaceChildren(canvas);
-  }, [layout, source, h]);
+  }, [layout, source, h, ready]);
 
   return (
     <div className={`concept${selected ? ' concept--sel' : ''}`}
@@ -78,6 +81,19 @@ export default function ConceptGallery({
     () => (source ? conceptsFor(source, profile, brandName) : []),
     [source, profile, brandName],
   );
+
+  /**
+   * Illustrated templates are recoloured before anything renders.
+   *
+   * Bumping a counter rather than storing the images: the cache lives in
+   * template-art, and this only needs to say "try drawing again now".
+   */
+  const [ready, setReady] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    prepareConceptTemplates(concepts).then(() => { if (alive) setReady((n) => n + 1); });
+    return () => { alive = false; };
+  }, [concepts]);
 
   if (!source) {
     return (
@@ -113,6 +129,7 @@ export default function ConceptGallery({
             selected={selected === c.id}
             onSelect={() => setSelected(c.id)}
             onApply={() => onApply(materialiseConcept(c, source), c.label)}
+            ready={ready}
           />
         ))}
       </div>

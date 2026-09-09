@@ -17,6 +17,7 @@ import {
 } from '@cupco/persistence';
 import type { AssetStore, StoredArt, StoredDesign, StoredElement } from '@cupco/persistence';
 import { buildQrArtwork, getQrStyle, normaliseUrl } from '@cupco/qr';
+import { templateFromAssetId } from './template-art';
 import type { PlacedArtwork } from '@cupco/vector';
 import type { Design, DesignElement } from './design';
 import { reserveIds } from './design';
@@ -157,7 +158,18 @@ export async function deserialiseDesign(
       ...(el.stretchV !== undefined && el.stretchV !== 1 ? { stretchV: el.stretchV } : {}),
     };
 
-    if (el.type === 'image') {
+    if (el.type === 'image' && el.assetId.startsWith('template:')) {
+      // A recoloured seasonal template is REGENERATED from its id, the way a
+      // QR is regenerated from its URL: the id already carries which template
+      // and which accent colour. Keeping a 1.6MB PNG in the asset store per
+      // project, for a file that ships with the app, would be waste.
+      const image = await templateFromAssetId(el.assetId);
+      if (!image) {
+        warnings.push(`"${el.name}" uses a template this version does not have`);
+        continue;
+      }
+      elements.push({ ...base, type: 'image', image, assetId: el.assetId, widthU: el.widthU });
+    } else if (el.type === 'image') {
       const asset = await assets.get(el.assetId);
       if (!asset) {
         warnings.push(`"${el.name}" is missing its image file and was not restored`);

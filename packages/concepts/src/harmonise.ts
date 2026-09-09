@@ -23,6 +23,14 @@ export interface ScenePalette {
   ground: string;
   dark: string;
   mid: string;
+  /**
+   * The brand colour itself, not a tone derived from it.
+   *
+   * Used where a template already has an accent drawn into it and simply wants
+   * replacing - there the point is the café's actual colour, not a version of
+   * it that happens to suit a generated scene.
+   */
+  accent: string;
 }
 
 function toHsl(rgb: RGB): { h: number; s: number; l: number } {
@@ -71,13 +79,13 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
  * very often its black outline or its white ground, neither of which says
  * anything about the brand; the saturated one is the brand colour.
  */
-function subjectHue(palette: RGB[]): { h: number; s: number } {
-  let best = { h: 0, s: 0 };
+function subjectHue(palette: RGB[]): { h: number; s: number; rgb: RGB | null } {
+  let best: { h: number; s: number; rgb: RGB | null } = { h: 0, s: 0, rgb: null };
   for (const rgb of palette) {
     const { h, s, l } = toHsl(rgb);
     // Near-black and near-white carry a hue but no intent.
     if (l < 0.06 || l > 0.96) continue;
-    if (s > best.s) best = { h, s };
+    if (s > best.s) best = { h, s, rgb };
   }
   return best;
 }
@@ -90,10 +98,13 @@ function subjectHue(palette: RGB[]): { h: number; s: number } {
  * customer who did not choose one is worse than leaving it grey.
  */
 export function harmonise(palette: RGB[]): ScenePalette {
-  const { h, s } = subjectHue(palette);
+  const { h, s, rgb } = subjectHue(palette);
   return {
     ground: toHex(fromHsl(h, clamp(s * 0.3, 0, 0.16), 0.955)),
     dark: toHex(fromHsl(h, clamp(s * 0.9, 0.18, 0.62), 0.17)),
     mid: toHex(fromHsl(h, clamp(s * 0.45, 0.06, 0.3), 0.63)),
+    // A logo with no colour at all leaves the accent a mid neutral rather
+    // than an invented hue.
+    accent: toHex(rgb ?? fromHsl(0, 0, 0.45)),
   };
 }

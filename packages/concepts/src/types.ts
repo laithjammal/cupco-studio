@@ -23,7 +23,7 @@ export interface ConceptInput {
   seed?: number;
 }
 
-export type PlacementKind = 'artwork' | 'text' | 'band' | 'qr' | 'motif';
+export type PlacementKind = 'artwork' | 'text' | 'band' | 'qr' | 'motif' | 'template';
 
 /**
  * How a concept wants the artwork adapted before placing it.
@@ -83,6 +83,14 @@ export interface Placement {
   motifColors?: {
     primary: string; ink: string; accent: string; secondary: string;
   };
+  /**
+   * template: a finished illustration, recoloured to the brand.
+   *
+   * `template` names the artwork and `color` is the accent it is recoloured
+   * to. The concept says which and what colour; the adapter does the pixels,
+   * for the same reason artwork treatments are declared rather than performed.
+   */
+  template?: string;
 }
 
 export interface ConceptLayout {
