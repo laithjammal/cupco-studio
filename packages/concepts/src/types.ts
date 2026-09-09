@@ -23,7 +23,7 @@ export interface ConceptInput {
   seed?: number;
 }
 
-export type PlacementKind = 'artwork' | 'text' | 'band' | 'qr';
+export type PlacementKind = 'artwork' | 'text' | 'band' | 'qr' | 'motif';
 
 /**
  * How a concept wants the artwork adapted before placing it.
@@ -61,6 +61,16 @@ export interface Placement {
   weight?: number;
   /** qr: placeholder shown until the customer supplies their own URL. */
   placeholderUrl?: string;
+  /**
+   * motif: which piece of seasonal artwork to draw, and in what colours.
+   *
+   * Named rather than embedded, so a layout stays plain data - the same reason
+   * artwork is referenced rather than carried. The adapter builds the vector.
+   */
+  motif?: string;
+  motifColors?: {
+    primary: string; ink: string; accent: string; secondary: string;
+  };
 }
 
 export interface ConceptLayout {

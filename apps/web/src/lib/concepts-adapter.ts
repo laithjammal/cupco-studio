@@ -11,7 +11,8 @@
 import { deriveFrustum, type CupProfile } from '@cupco/geometry';
 import {
   extractPalette, hexToRgb, dropBackgroundPlate, recolourArtwork,
-  type PlacedArtwork, type RGB,
+  buildMotifArtwork,
+  type PlacedArtwork, type RGB, type MotifId,
 } from '@cupco/vector';
 import { luminance, shade } from '@cupco/concepts';
 import {
@@ -105,6 +106,24 @@ export function materialiseConcept(
         color: p.color ?? el.color,
         tracking: p.tracking ?? 0,
         weight: p.weight ?? el.weight,
+        opacity: p.opacity ?? 1,
+      });
+    } else if (p.kind === 'motif') {
+      // Seasonal artwork, built here rather than carried through the layout:
+      // a concept stays plain data, and a motif arrives as an ordinary vector
+      // element the operator can move, recolour or delete like any other.
+      const c = p.motifColors;
+      const art = buildMotifArtwork(p.motif as MotifId, {
+        primary: hexToRgb(c?.primary ?? '#ffffff'),
+        ink: hexToRgb(c?.ink ?? '#101010'),
+        accent: hexToRgb(c?.accent ?? '#c0392b'),
+        secondary: hexToRgb(c?.secondary ?? '#9aa8bd'),
+      });
+      const el = createVectorElement(art, p.motif ?? 'Motif', false);
+      elements.push({
+        ...el,
+        u: p.u, v: p.v, rotation: p.rotation,
+        widthU: p.widthU ?? el.widthU,
         opacity: p.opacity ?? 1,
       });
     } else if (p.kind === 'qr') {

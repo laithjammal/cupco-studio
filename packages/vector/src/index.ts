@@ -4,3 +4,4 @@ export * from './svg-import';
 export * from './place';
 export * from './transform';
 export * from './shapes';
+export * from './motifs';

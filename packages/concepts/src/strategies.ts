@@ -13,6 +13,7 @@
 import { chooseBackground, chooseForeground, isDark, shade, toHex } from './contrast';
 import { safeBounds, type ConceptInput, type ConceptLayout, type ConceptStrategy, type Placement } from './types';
 import type { RGB } from '@cupco/vector';
+import { SEASONAL_STRATEGIES } from './seasonal';
 
 /** Dominant artwork colour, falling back to a neutral when there is none. */
 function subjectColour(input: ConceptInput): RGB {
@@ -350,6 +351,15 @@ export const STRATEGIES: ConceptStrategy[] = [
   repeatGrid, diagonal, minimalCorner, onBlack, markAndQr, wordmark,
 ];
 
+/**
+ * All strategies: the layout ideas, then the seasonal campaigns.
+ *
+ * Seasonal ones come second because they answer a different question. A café
+ * arriving with a logo wants to see how it sits on a cup before it sees a
+ * Halloween version of it.
+ */
+export const ALL_STRATEGIES: ConceptStrategy[] = [...STRATEGIES, ...SEASONAL_STRATEGIES];
+
 export function generateConcepts(input: ConceptInput, limit = 10): ConceptLayout[] {
   // Deterministic RNG so the same upload always yields the same proposals.
   let seed = (input.seed ?? 1) >>> 0;
@@ -362,7 +372,7 @@ export function generateConcepts(input: ConceptInput, limit = 10): ConceptLayout
   };
 
   const out: ConceptLayout[] = [];
-  for (const s of STRATEGIES) {
+  for (const s of ALL_STRATEGIES) {
     if (out.length >= limit) break;
     const layout = s.generate(input, rng);
     if (layout) out.push(layout);

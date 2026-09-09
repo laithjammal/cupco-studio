@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { deriveFrustum, CUP_8OZ } from '@cupco/geometry';
 import {
   generateConcepts, STRATEGIES, safeBounds, contrastRatio, luminance,
-  chooseBackground, chooseForeground, isDark, shade,
+  chooseBackground, chooseForeground, isDark, shade, SEASONAL_CAMPAIGNS,
   type ConceptInput,
 } from '../src/index';
-import { hexToRgb, type RGB } from '@cupco/vector';
+import { hexToRgb, motifAspect, type RGB, type MotifId } from '@cupco/vector';
 
 const geom = deriveFrustum(CUP_8OZ.dimensions);
 
@@ -278,5 +278,130 @@ describe('strategy behaviour', () => {
   it('every registered strategy has a unique id', () => {
     const ids = STRATEGIES.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+/**
+ * The seasonal campaigns.
+ *
+ * These are scenes rather than layouts, so what is worth asserting is
+ * different: that the café's mark survives the scene, that nothing lands
+ * outside the printable area, and that every motif a layout names can actually
+ * be built. A scene that buries a logo in snowflakes is worse than no scene.
+ */
+describe('seasonal concepts', () => {
+  const geom = deriveFrustum(CUP_8OZ.dimensions);
+  const inputFor = (aspect: number) => ({
+    artworkAspect: aspect,
+    palette: [[30, 60, 120]] as RGB[],
+    profile: CUP_8OZ,
+    geom,
+    brandName: 'BICYCLE',
+    seed: 7,
+  });
+  const seasons = (aspect = 1) =>
+    generateConcepts(inputFor(aspect), 40).filter((c) => c.id.startsWith('season-'));
+
+  it('offers one concept per campaign in the calendar', () => {
+    expect(seasons()).toHaveLength(SEASONAL_CAMPAIGNS.length);
+    expect(SEASONAL_CAMPAIGNS.map((c) => c.month)).toEqual([
+      'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'APRIL', 'MAY', 'JUNE',
+      'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
+    ]);
+  });
+
+  it.each([0.2, 0.5, 1, 1.8, 3])('generates for artwork of aspect %s', (aspect) => {
+    expect(seasons(aspect)).toHaveLength(SEASONAL_CAMPAIGNS.length);
+  });
+
+  /**
+   * The one that matters most. Placements paint in order, so the mark being
+   * last is what stops a motif landing on top of the café's logo.
+   */
+  it('always paints the café mark LAST', () => {
+    for (const c of seasons()) {
+      const last = c.placements[c.placements.length - 1]!;
+      expect(last.kind).toBe('artwork');
+      expect(c.placements.filter((p) => p.kind === 'artwork')).toHaveLength(1);
+    }
+  });
+
+  it('drops the logo plate and tones the mark for the season ground', () => {
+    for (const c of seasons()) {
+      const art = c.placements.find((p) => p.kind === 'artwork')!;
+      // A flat seasonal ground shows any white box a logo carries.
+      expect(art.treatment?.dropPlate).toBe(true);
+      expect(art.treatment?.tone).toMatch(/lighten|darken/);
+    }
+  });
+
+  it('names only motifs that can actually be built', () => {
+    for (const c of seasons()) {
+      for (const p of c.placements.filter((x) => x.kind === 'motif')) {
+        expect(p.motif).toBeTruthy();
+        expect(() => motifAspect(p.motif as MotifId)).not.toThrow();
+        expect(p.motifColors).toBeTruthy();
+        for (const role of ['primary', 'ink', 'accent', 'secondary'] as const) {
+          expect(p.motifColors![role]).toMatch(/^#[0-9a-f]{6}$/i);
+        }
+      }
+    }
+  });
+
+  /**
+   * Every element has to survive the print. Checked against the profile's own
+   * safe bounds rather than against 0..1, because the safe area is where
+   * artwork is actually guaranteed.
+   */
+  it('keeps every motif inside the safe area, at any artwork aspect', () => {
+    const s = safeBounds(CUP_8OZ, geom);
+    const { widthPx, heightPx } = CUP_8OZ.designCanvas;
+    for (const aspect of [0.3, 1, 2.5]) {
+      for (const c of seasons(aspect)) {
+        // The snow line is exempt: like the band beneath it, a ground is
+        // SUPPOSED to run off the base of the cup rather than stop at a line.
+        for (const p of c.placements.filter((x) => x.kind === 'motif' && x.motif !== 'drift')) {
+          const halfV = (p.widthU! * motifAspect(p.motif as MotifId) * (widthPx / heightPx)) / 2;
+          expect(p.v + halfV).toBeLessThanOrEqual(s.vTop + 1e-9);
+          expect(p.v - halfV).toBeGreaterThanOrEqual(s.vBottom - 1e-9);
+        }
+      }
+    }
+  });
+
+  it('lets the snow line bleed off the base, as a ground should', () => {
+    const s = safeBounds(CUP_8OZ, geom);
+    const { widthPx, heightPx } = CUP_8OZ.designCanvas;
+    const june = seasons().find((c) => c.id === 'season-june')!;
+    const drift = june.placements.find((p) => p.motif === 'drift')!;
+    const halfV = (drift.widthU! * motifAspect('drift') * (widthPx / heightPx)) / 2;
+    expect(drift.v - halfV).toBeLessThan(s.vBottom);
+    // And it wraps past both seams, so the join is never visible.
+    expect(drift.widthU!).toBeGreaterThan(1);
+  });
+
+  it('sits grounded motifs above the ground band, not through it', () => {
+    // June's snowman stands on the drift; if grounding regressed it would be
+    // centred on v=0 and half of it would be off the cup.
+    const june = seasons().find((c) => c.id === 'season-june')!;
+    const band = june.placements.find((p) => p.kind === 'band')!;
+    const snowman = june.placements.find((p) => p.motif === 'snowman')!;
+    expect(snowman.v).toBeGreaterThan(band.v + (band.heightV ?? 0) / 2);
+  });
+
+  it('is deterministic — the same upload gives the same scenes', () => {
+    const a = seasons();
+    const b = seasons();
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it('carries a real headline and a description for every campaign', () => {
+    for (const c of seasons()) {
+      const text = c.placements.filter((p) => p.kind === 'text');
+      expect(text.length).toBeGreaterThanOrEqual(1);
+      expect(text[0]!.text!.length).toBeGreaterThan(3);
+      expect(c.description.length).toBeGreaterThan(20);
+      expect(c.background).toMatch(/^#[0-9a-f]{6}$/i);
+    }
   });
 });
