@@ -37,8 +37,6 @@
 
 import qrcode from 'qrcode-generator';
 import type { Artwork, RGB } from './artwork';
-import { buildFrame, type QrFrameId } from './frames';
-import { isStructural } from './structure';
 
 /** How each data module is drawn. */
 export type QrModuleStyle = 'square' | 'dot' | 'rounded' | 'fluid';
@@ -106,31 +104,6 @@ export interface QrOptions {
   dark?: RGB;
   style?: Partial<QrStyle>;
   /**
-   * The shape the code sits in. Defaults to 'none' - the plain square ground.
-   *
-   * A frame is the light GROUND, never a mask over the code: the finder
-   * patterns live in three corners of the square, so clipping the code to a
-   * shape removes them and it stops being locatable at all. See frames.ts.
-   */
-  frame?: QrFrameId;
-  /**
-   * Draw the code ITSELF as a shape, rather than putting a shape around it.
-   *
-   * The silhouette is painted over the code and each module's CENTRE is then
-   * restored to its true value - which is the only part a decoder reads. So
-   * the artwork looks like a star while still scanning as the same code.
-   *
-   * Structural modules are never painted over: see structure.ts.
-   *
-   * COSTS, both real:
-   *   - the readable feature is now a THIRD of a module, so the code has to be
-   *     printed about three times larger. `minModuleScale` reports it and
-   *     preflight multiplies its floor by it.
-   *   - the picture is drawn at the resolution of the module grid, so a short
-   *     URL makes a coarse image. A denser code carries more detail.
-   */
-  silhouette?: QrFrameId;
-  /**
    * The light ground the code is printed on. Defaults to white.
    *
    * Emitted as part of the artwork rather than left to each consumer to paint
@@ -147,25 +120,6 @@ export interface QrResult {
   /** Number of vector subpaths emitted. */
   pathCount: number;
   style: QrStyle;
-  frame: QrFrameId;
-  silhouette: QrFrameId;
-  /**
-   * How much larger than normal a module has to be printed.
-   *
-   * 1 ordinarily. 3 for a silhouette, because the part a decoder actually
-   * reads is the module's centre third, and it is that patch - not the module
-   * - which has to survive ink spread and a phone camera.
-   */
-  minModuleScale: number;
-  /**
-   * Width of the code and its quiet zone as a fraction of the artwork's width.
-   *
-   * 1 for the plain square; about 0.69 in a circle, 0.49 in the swirl. It
-   * matters because the printable floor is a MODULE size: a framed code placed
-   * at the same width has proportionally smaller modules, and preflight has to
-   * know that rather than assuming the code fills its artwork.
-   */
-  codeFraction: number;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -207,20 +161,6 @@ function rect(x0: number, y0: number, x1: number, y1: number, reverse = false): 
     { x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }, { x: x0, y: y0 },
   ];
   return reverse ? pts.slice().reverse() : pts;
-}
-
-/** Even-odd point-in-polygon over a set of rings. Used to test the silhouette. */
-function pointInRings(rings: readonly Pt[][], x: number, y: number): boolean {
-  let inside = false;
-  for (const r of rings) {
-    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
-      const a = r[i]!, b = r[j]!;
-      if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) {
-        inside = !inside;
-      }
-    }
-  }
-  return inside;
 }
 
 /** Which corners of a rounded rectangle are actually rounded. */
@@ -298,19 +238,6 @@ function roundedRect(
  */
 const DOT_DIAMETER = 1.0;
 
-/**
- * The fraction of a module a silhouette leaves showing its true value.
- *
- * Settled by sweeping it against both decoders, the way the dot diameter was.
- * 0.33 decodes on both at every size tested and survives moderate ink spread;
- * above about 0.5 the picture stops being legible, because the restored
- * centres crowd out the shape.
- *
- * It is also what makes a silhouette code three times bigger to print: this
- * patch, not the module, is the feature that has to survive the press.
- */
-const SILHOUETTE_CENTRE = 1 / 3;
-
 /** Corner radius of a 'rounded' module, as a fraction of the module. */
 const ROUNDED_RADIUS = 0.3;
 
@@ -356,20 +283,12 @@ export function buildQrArtwork(text: string, options: QrOptions = {}): QrResult 
   const n = qr.getModuleCount();
   const total = n + quiet * 2;
 
-  // The frame's box becomes the artwork's unit box, and the code+quiet square
-  // is placed inside it. With no frame the two are the same thing.
-  const frameId = options.frame ?? 'none';
-  const f = buildFrame(frameId);
-  const scale = 1 / f.boxW;                 // frame box -> unit width
-  const codeSide = scale;                   // the square is 1 in frame units
-  const u = codeSide / total;               // one module, normalised
-  const originX = f.codeX * scale;
-  const originY = f.codeY * scale;
+  const u = 1 / total; // one module, normalised
 
   const subpaths: Pt[][] = [];
   const at = (i: number) => (i + quiet) * u;
-  const atX = (i: number) => originX + at(i);
-  const atY = (i: number) => originY + at(i);
+  const atX = at;
+  const atY = at;
   const isDark = (row: number, col: number) =>
     row >= 0 && row < n && col >= 0 && col < n && qr.isDark(row, col);
 
@@ -420,113 +339,32 @@ export function buildQrArtwork(text: string, options: QrOptions = {}): QrResult 
     }
   }
 
-  /* ---- silhouette ------------------------------------------------------ */
-
-  const silhouetteId = options.silhouette ?? 'none';
-  const hasSilhouette = silhouetteId !== 'none';
-
-  if (hasSilhouette) {
-    // Everything drawn above was the data modules in their own style; a
-    // silhouette replaces that entirely, so start again.
-    subpaths.length = 0;
-
-    const sil = buildFrame(silhouetteId);
-    // Letterboxed into the code square, not stretched to it: a cup squashed
-    // to a square stops reading as a cup.
-    const sScale = Math.min(1 / sil.boxW, 1 / sil.boxH);
-    const sOffX = (1 - sil.boxW * sScale) / 2;
-    const sOffY = (1 - sil.boxH * sScale) / 2;
-    // Plate AND decoration: as a frame the ring's bold border and the swirl's
-    // arms are separate dark shapes, but as a SILHOUETTE they are the whole
-    // point - without them both collapse to a plain circle.
-    //
-    // Even-odd winding handles the union correctly, including the ring's
-    // annulus: a point between its two circles crosses one boundary and is
-    // inside, a point within both crosses two and is not.
-    const rings = [...sil.plate, ...sil.accent].map((r) => r.map((q) => ({
-      x: sOffX + q.x * sScale, y: sOffY + q.y * sScale,
-    })));
-    const inShape = (col: number, row: number) =>
-      pointInRings(rings, (col + 0.5) / n, (row + 0.5) / n);
-
-    const m = (1 - SILHOUETTE_CENTRE) / 2;    // inset to the centre patch
-    const paintable = (row: number, col: number) => !isStructural(row, col, n);
-
-    for (let row = 0; row < n; row++) {
-      // Horizontal runs of fully-dark cells are merged, as in the square
-      // style: a silhouette makes large solid areas, and one rectangle per
-      // module would multiply the path count several-fold for no difference
-      // on press.
-      let runStart = -1;
-      for (let col = 0; col <= n; col++) {
-        const solid = col < n && paintable(row, col) && inShape(col, row) && isDark(row, col);
-        if (solid && runStart < 0) runStart = col;
-        if (!solid && runStart >= 0) {
-          subpaths.push(rect(atX(runStart), atY(row), atX(col), atY(row + 1)));
-          runStart = -1;
-        }
-        if (col >= n || !paintable(row, col)) continue;
-
-        const shaded = inShape(col, row);
-        const dark = isDark(row, col);
-        if (shaded && dark) continue;                      // already emitted
-
-        if (shaded && !dark) {
-          // Dark cell with the true LIGHT centre cut out of it, by reverse
-          // winding - the same trick the eyes use for their light ring.
-          subpaths.push(rect(atX(col), atY(row), atX(col + 1), atY(row + 1)));
-          subpaths.push(rect(
-            atX(col + m), atY(row + m), atX(col + 1 - m), atY(row + 1 - m), true,
-          ));
-        } else if (!shaded && dark) {
-          // Light cell, with just its true dark centre.
-          subpaths.push(rect(
-            atX(col + m), atY(row + m), atX(col + 1 - m), atY(row + 1 - m),
-          ));
-        }
-      }
-    }
-
-    // Structural modules are drawn exactly, at full size.
-    for (let row = 0; row < n; row++) {
-      for (let col = 0; col < n; col++) {
-        if (!isStructural(row, col, n)) continue;
-        if (isFinder(row, col, n)) continue;               // eyes drawn below
-        if (!isDark(row, col)) continue;
-        subpaths.push(rect(atX(col), atY(row), atX(col + 1), atY(row + 1)));
-      }
-    }
-  }
-
   /* ---- finder patterns ------------------------------------------------- */
 
   for (const [r0, c0] of [[0, 0], [0, n - 7], [n - 7, 0]] as const) {
     subpaths.push(...buildEye(style.eye, atX(c0), atY(r0), u));
   }
 
-  /* ---- the frame ------------------------------------------------------- */
+  /* ---- the light ground ------------------------------------------------ */
 
+  // Emitted as part of the artwork rather than left to each consumer to paint
+  // behind it. There were three copies of this rectangle - the preview
+  // renderer, the vector export and the style swatch - and three copies of one
+  // fact is how they drift.
   const light = options.light ?? ([255, 255, 255] as RGB);
-  const toUnit = (rings: { x: number; y: number }[][]) =>
-    rings.map((r) => r.map((p) => ({ x: p.x * scale, y: p.y * scale })));
-
-  // Plate first so it sits BEHIND everything. The accent is dark decoration
-  // and by construction never reaches the quiet zone.
-  const shapes: Artwork['shapes'] = [
-    { subpaths: toUnit(f.plate), fill: light, opacity: 1 },
-  ];
-  if (f.accent.length) shapes.push({ subpaths: toUnit(f.accent), fill: dark, opacity: 1 });
-  shapes.push({ subpaths, fill: dark, opacity: 1 });
 
   return {
-    art: { aspect: f.boxH / f.boxW, shapes },
+    art: {
+      aspect: 1,
+      shapes: [
+        // Plate first, so it sits BEHIND the modules.
+        { subpaths: [rect(0, 0, 1, 1)], fill: light, opacity: 1 },
+        { subpaths, fill: dark, opacity: 1 },
+      ],
+    },
     moduleCount: n,
     pathCount: subpaths.length,
     style,
-    frame: frameId,
-    codeFraction: codeSide,
-    silhouette: silhouetteId,
-    minModuleScale: hasSilhouette ? Math.round(1 / SILHOUETTE_CENTRE) : 1,
   };
 }
 

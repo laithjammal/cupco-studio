@@ -525,39 +525,3 @@ describe('past the bleed', () => {
   });
 });
 
-/**
- * A framed QR is smaller than its artwork.
- *
- * The frame is a light ground around the code, so the code fills only part of
- * the artwork. Measuring modules against the artwork width would report a
- * swirl-framed code as roughly twice the size it actually prints - and the
- * whole point of this rule is that a module has a printable floor.
- */
-describe('QR size with a frame', () => {
-  const qrEl = (widthU: number, codeFraction?: number) => el({
-    kind: 'qr', u: 0.5, v: 0.5, widthU, heightV: 0.3,
-    qr: { url: 'https://cupco.com.au', live: true, moduleCount: 25, codeFraction },
-  });
-
-  it('a width that passes unframed can fail once the code is only half the artwork', () => {
-    // Sized so the plain code clears the floor with a little room.
-    const w = 0.115;
-    expect(rules([qrEl(w)], 'qr-size')).toEqual([]);
-    expect(rules([qrEl(w, 0.49)], 'qr-size')).toHaveLength(1);
-  });
-
-  it('an absent fraction means the code fills its artwork', () => {
-    const a = rules([qrEl(0.06)], 'qr-size');
-    const b = rules([qrEl(0.06, 1)], 'qr-size');
-    expect(a.map((i) => i.measurement)).toEqual(b.map((i) => i.measurement));
-  });
-
-  it('the remedy asks for an ARTWORK width, not a code width', () => {
-    const issues = rules([qrEl(0.05, 0.5)], 'qr-size');
-    expect(issues).toHaveLength(1);
-    // Twice the code's own requirement, because the code is half the artwork.
-    const plain = rules([qrEl(0.05, 1)], 'qr-size');
-    const num = (s: string) => Number(/([\d.]+)mm/.exec(s)?.[1] ?? 0);
-    expect(num(issues[0]!.remedy!)).toBeCloseTo(num(plain[0]!.remedy!) * 2, 1);
-  });
-});

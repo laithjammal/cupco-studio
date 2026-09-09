@@ -12,7 +12,7 @@ import type { PlacedArtwork } from '@cupco/vector';
 import {
   rgbToCmyk, simulateCmykPrint, hexToRgb, rgbToHex,
 } from '@cupco/vector';
-import { buildQrArtwork, normaliseUrl, getQrStyle, type QrFrameId } from '@cupco/qr';
+import { buildQrArtwork, normaliseUrl, getQrStyle } from '@cupco/qr';
 import { cssFamily, getLoadedFont, layoutText, resolveWeight } from './fonts';
 
 export type ElementId = string;
@@ -128,25 +128,6 @@ export interface QrElement extends ElementBase {
   moduleCount: number;
   /** A preset from QR_STYLES. Only changes how modules are DRAWN. */
   styleId: string;
-  /** A preset from QR_FRAMES: the SHAPE the code sits in. */
-  frameId: QrFrameId;
-  /**
-   * A shape drawn AS the code rather than around it.
-   *
-   * 'none' unless chosen. The two are alternatives, not layers: a shape is
-   * either the ground the code sits on, or the code itself.
-   */
-  silhouetteId: QrFrameId;
-  /** How much larger than normal a module must print. 3 for a silhouette. */
-  minModuleScale: number;
-  /**
-   * Width of the code and its quiet zone as a fraction of the artwork's width.
-   *
-   * 1 for the plain square, less inside any frame. Carried on the element
-   * because the printable floor is a MODULE size, and preflight cannot work
-   * that out from `widthU` alone once the artwork is bigger than the code.
-   */
-  codeFraction: number;
 }
 
 export type DesignElement =
@@ -194,32 +175,23 @@ export function createTextElement(content = 'CUPCO'): TextElement {
  * One place, because URL, style and frame all feed the same builder and three
  * near-identical copies of this call is how they drift apart.
  */
-function qrArt(url: string, styleId: string, frameId: QrFrameId, silhouetteId: QrFrameId) {
+function qrArt(url: string, styleId: string) {
   const target = normaliseUrl(url) ?? 'https://example.com';
-  const { art, moduleCount, codeFraction, minModuleScale } = buildQrArtwork(target, {
-    style: getQrStyle(styleId),
-    frame: frameId,
-    silhouette: silhouetteId,
-    // A silhouette spends error-correction budget on the picture, so it gets
-    // the highest level rather than the default.
-    level: silhouetteId === 'none' ? 'M' : 'H',
-  });
-  return { art, moduleCount, codeFraction, minModuleScale };
+  const { art, moduleCount } = buildQrArtwork(target, { style: getQrStyle(styleId) });
+  return { art, moduleCount };
 }
 
 export function createQrElement(
   url: string,
   placeholderUrl = 'https://example.com',
   styleId = 'classic',
-  frameId: QrFrameId = 'none',
-  silhouetteId: QrFrameId = 'none',
 ): QrElement {
   const live = normaliseUrl(url) !== null;
-  const built = qrArt(normaliseUrl(url) ?? placeholderUrl, styleId, frameId, silhouetteId);
+  const built = qrArt(normaliseUrl(url) ?? placeholderUrl, styleId);
   return {
     id: nextId(), type: 'qr', name: live ? 'QR code' : 'QR code (placeholder)',
     u: 0.75, v: 0.55, rotation: 0,
-    url, live, widthU: 0.13, styleId, frameId, silhouetteId, ...built,
+    url, live, widthU: 0.13, styleId, ...built,
   };
 }
 
@@ -228,7 +200,7 @@ export function withQrUrl(el: QrElement, url: string): QrElement {
   const normalised = normaliseUrl(url);
   return {
     ...el, url, live: normalised !== null,
-    ...qrArt(normalised ?? 'https://example.com', el.styleId, el.frameId, el.silhouetteId),
+    ...qrArt(normalised ?? 'https://example.com', el.styleId),
     name: normalised ? 'QR code' : 'QR code (placeholder)',
   };
 }
@@ -240,7 +212,7 @@ export function withQrUrl(el: QrElement, url: string): QrElement {
  * module count and everything the code encodes stay identical.
  */
 export function withQrStyle(el: QrElement, styleId: string): QrElement {
-  return { ...el, styleId, ...qrArt(el.url, styleId, el.frameId, el.silhouetteId) };
+  return { ...el, styleId, ...qrArt(el.url, styleId) };
 }
 
 /**
@@ -249,27 +221,6 @@ export function withQrStyle(el: QrElement, styleId: string): QrElement {
  * The frame is the light ground the code sits on, so the code itself is
  * untouched here too - only how much of the artwork it occupies changes.
  */
-export function withQrFrame(el: QrElement, frameId: QrFrameId): QrElement {
-  // A frame and a silhouette are alternatives: choosing one clears the other.
-  return {
-    ...el, frameId, silhouetteId: 'none',
-    ...qrArt(el.url, el.styleId, frameId, 'none'),
-  };
-}
-
-/**
- * Draw the code AS a shape rather than putting a shape around it.
- *
- * The silhouette is painted over the code and each module's centre restored to
- * its true value, which is the only part a decoder reads. Structural modules -
- * the eyes, timing and alignment patterns - are never painted over.
- */
-export function withQrSilhouette(el: QrElement, silhouetteId: QrFrameId): QrElement {
-  return {
-    ...el, silhouetteId, frameId: 'none',
-    ...qrArt(el.url, el.styleId, 'none', silhouetteId),
-  };
-}
 
 export function createBandElement(color = '#0f172a', v = 0.25, heightV = 0.22): BandElement {
   return {

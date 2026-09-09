@@ -16,7 +16,7 @@ import {
   quantiseArt, encodeJson, decodeJson, migrateDesign, SCHEMA_VERSION,
 } from '@cupco/persistence';
 import type { AssetStore, StoredArt, StoredDesign, StoredElement } from '@cupco/persistence';
-import { buildQrArtwork, getQrStyle, normaliseUrl, type QrFrameId } from '@cupco/qr';
+import { buildQrArtwork, getQrStyle, normaliseUrl } from '@cupco/qr';
 import type { PlacedArtwork } from '@cupco/vector';
 import type { Design, DesignElement } from './design';
 import { reserveIds } from './design';
@@ -109,9 +109,6 @@ export async function serialiseDesign(
       // regenerated on load from those two.
       elements.push({
         ...base, type: 'qr', url: el.url, widthU: el.widthU, styleId: el.styleId,
-        // Omitted when square, so older documents round-trip unchanged.
-        ...(el.frameId !== 'none' ? { frameId: el.frameId } : {}),
-        ...(el.silhouetteId !== 'none' ? { silhouetteId: el.silhouetteId } : {}),
       });
     } else if (el.type === 'text') {
       elements.push({
@@ -181,22 +178,15 @@ export async function deserialiseDesign(
       const art = decodeJson<StoredArt>(asset.bytes) as PlacedArtwork;
       elements.push({ ...base, type: 'vector', art, widthU: el.widthU, traced: el.traced });
     } else if (el.type === 'qr') {
-      // Regenerated from the URL, style and frame, by the same code that built
-      // it. An older document has no frameId and comes back square.
+      // Regenerated from the URL and style, by the same code that built it.
       const normalised = normaliseUrl(el.url);
-      const frameId = (el.frameId ?? 'none') as QrFrameId;
-      const silhouetteId = (el.silhouetteId ?? 'none') as QrFrameId;
-      const { art, moduleCount, codeFraction, minModuleScale } = buildQrArtwork(
-        normalised ?? 'https://example.com',
-        {
-          style: getQrStyle(el.styleId), frame: frameId, silhouette: silhouetteId,
-          level: silhouetteId === 'none' ? 'M' : 'H',
-        },
+      const { art, moduleCount } = buildQrArtwork(
+        normalised ?? 'https://example.com', { style: getQrStyle(el.styleId) },
       );
       elements.push({
         ...base, type: 'qr',
         url: el.url, live: normalised !== null, art, widthU: el.widthU, moduleCount,
-        styleId: el.styleId, frameId, silhouetteId, codeFraction, minModuleScale,
+        styleId: el.styleId,
       });
     } else if (el.type === 'text') {
       elements.push({

@@ -61,26 +61,7 @@ export interface PreflightElement {
 
   image?: { naturalWidth: number; naturalHeight: number };
   text?: { content: string; sizeV: number };
-  qr?: {
-    url: string;
-    live: boolean;
-    moduleCount: number;
-    /**
-     * Width of the code and its quiet zone as a fraction of the artwork's
-     * width. Absent means 1 - the code fills its artwork, which is the plain
-     * square. A frame is a light ground AROUND the code, so the artwork is
-     * wider than the code and the modules are correspondingly smaller.
-     */
-    codeFraction?: number;
-    /**
-     * How much larger than normal a module must print. Absent means 1.
-     *
-     * 3 for a silhouette code, where the part a decoder reads is the module's
-     * centre third - and it is that patch, not the module, which has to
-     * survive ink spread and a phone camera.
-     */
-    minModuleScale?: number;
-  };
+  qr?: { url: string; live: boolean; moduleCount: number };
 }
 
 /** The design as preflight sees it. */

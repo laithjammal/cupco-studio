@@ -15,7 +15,7 @@ import {
 } from '@cupco/geometry';
 import {
   renderDesignToCanvas, EMPTY_DESIGN, createImageElement, createTextElement,
-  createVectorElement, FONT_CHOICES, cssFamily, nextId, withQrUrl, withQrStyle, withQrFrame, withQrSilhouette,
+  createVectorElement, FONT_CHOICES, cssFamily, nextId, withQrUrl, withQrStyle,
   type Design, type DesignElement, type ElementId, type TextElement,
 } from '@/lib/design';
 import { useHistory } from '@/lib/useHistory';
@@ -26,7 +26,7 @@ import ProjectBar from '@/components/ProjectBar';
 import { runPreflight } from '@cupco/preflight';
 import { toPreflightDesign } from '@/lib/preflight-adapter';
 import PreflightPanel from '@/components/PreflightPanel';
-import QrStylePicker, { QrFramePicker } from '@/components/QrStylePicker';
+import QrStylePicker from '@/components/QrStylePicker';
 import MockupGallery from '@/components/MockupGallery';
 import PlateStudio from '@/components/PlateStudio';
 import Section from '@/components/Section';
@@ -788,27 +788,14 @@ export default function Page() {
                 ? `Scans to ${qrElement.url.startsWith('http') ? qrElement.url : `https://${qrElement.url}`} · ${qrElement.moduleCount}×${qrElement.moduleCount} modules`
                 : 'Type your website and the placeholder becomes a working code.'}
             </div>
-            <QrFramePicker
+            <QrStylePicker
               url={qrElement.url}
               styleId={qrElement.styleId}
-              frameId={qrElement.frameId}
-              silhouetteId={qrElement.silhouetteId}
-              onFrame={(id) => commitElement(qrElement.id, withQrFrame(qrElement, id))}
-              onSilhouette={(id) => commitElement(qrElement.id, withQrSilhouette(qrElement, id))}
+              onChange={(id) => commitElement(qrElement.id, withQrStyle(qrElement, id))}
             />
-            {qrElement.silhouetteId === 'none' && (
-              <QrStylePicker
-                url={qrElement.url}
-                styleId={qrElement.styleId}
-                frameId={qrElement.frameId}
-                silhouetteId={qrElement.silhouetteId}
-                onChange={(id) => commitElement(qrElement.id, withQrStyle(qrElement, id))}
-              />
-            )}
             <div className="hint">
-              Shape and style change the drawing, never the data — the shape is the
-              light ground the code sits on, not a mask over it. Every one is decoded
-              by two independent scanners in the tests, at print size and blurred.
+              Style changes the drawing, never the data. Each one is decoded by two
+              independent scanners in the tests, at print size and blurred.
             </div>
           </div>
         )}
