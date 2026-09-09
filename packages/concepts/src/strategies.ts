@@ -360,7 +360,19 @@ export const STRATEGIES: ConceptStrategy[] = [
  */
 export const ALL_STRATEGIES: ConceptStrategy[] = [...STRATEGIES, ...SEASONAL_STRATEGIES];
 
-export function generateConcepts(input: ConceptInput, limit = 10): ConceptLayout[] {
+/**
+ * Every concept a strategy will produce for this artwork.
+ *
+ * The default is ALL of them, not a round number. It used to be 10, which was
+ * exactly the count of the layout strategies - so when the seasonal campaigns
+ * were added they were generated and then silently dropped, and the app showed
+ * no sign they existed. A cap that happens to equal the current list length is
+ * indistinguishable from no cap until the list grows.
+ */
+export function generateConcepts(
+  input: ConceptInput,
+  limit = ALL_STRATEGIES.length,
+): ConceptLayout[] {
   // Deterministic RNG so the same upload always yields the same proposals.
   let seed = (input.seed ?? 1) >>> 0;
   const rng = () => {

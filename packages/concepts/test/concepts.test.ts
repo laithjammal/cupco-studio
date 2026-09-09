@@ -72,7 +72,10 @@ describe('generateConcepts', () => {
   it('produces a useful number of concepts', () => {
     const out = generateConcepts(input());
     expect(out.length).toBeGreaterThanOrEqual(5);
-    expect(out.length).toBeLessThanOrEqual(10);
+    // Tied to the strategy lists rather than a round number: a literal here
+    // that happened to equal the list length is exactly what let the seasonal
+    // campaigns be generated and then dropped without a test noticing.
+    expect(out.length).toBe(STRATEGIES.length + SEASONAL_CAMPAIGNS.length);
   });
 
   it('is deterministic — the same upload gives the same proposals', () => {
@@ -100,9 +103,20 @@ describe('generateConcepts', () => {
     expect(generateConcepts(input(), 3)).toHaveLength(3);
   });
 
-  it('every background contrasts with the artwork', () => {
+  /**
+   * LAYOUT concepts only. A layout picks its ground FROM the artwork, so it
+   * has to contrast with it.
+   *
+   * A seasonal campaign works the other way round: the ground is the season -
+   * Halloween is orange and near-black whatever the café's logo is - and the
+   * MARK is re-toned to read against it. That is asserted separately, on the
+   * treatment, which is where the guarantee actually lives.
+   */
+  it('every LAYOUT background contrasts with the artwork', () => {
     const subject: RGB = [232, 85, 45];
-    for (const c of generateConcepts(input())) {
+    const layouts = generateConcepts(input()).filter((c) => !c.id.startsWith('season-'));
+    expect(layouts).toHaveLength(STRATEGIES.length);
+    for (const c of layouts) {
       expect(contrastRatio(hexToRgb(c.background), subject)).toBeGreaterThan(1.6);
     }
   });
@@ -140,8 +154,14 @@ describe('placements stay manufacturable', () => {
   it('no placement centre falls outside the cup', () => {
     for (const c of generateConcepts(input())) {
       for (const p of c.placements) {
-        expect(p.v).toBeGreaterThanOrEqual(0);
-        expect(p.v).toBeLessThanOrEqual(1);
+        // A ground is the exception, and deliberately so: a snow line or a
+        // meadow has to run off the base of the cup rather than stop at it,
+        // so its centre sits below v=0 by design.
+        const isGround = p.kind === 'band' || p.motif === 'drift';
+        if (!isGround) {
+          expect(p.v).toBeGreaterThanOrEqual(0);
+          expect(p.v).toBeLessThanOrEqual(1);
+        }
         expect(p.u).toBeGreaterThanOrEqual(0);
         expect(p.u).toBeLessThanOrEqual(1);
       }
@@ -299,8 +319,19 @@ describe('seasonal concepts', () => {
     brandName: 'BICYCLE',
     seed: 7,
   });
+  // NOTE the default limit. Asking for 40 here is what hid the fact that the
+  // default was 10 - exactly the number of layout strategies - so every
+  // seasonal concept was generated and then dropped before it reached the app.
   const seasons = (aspect = 1) =>
-    generateConcepts(inputFor(aspect), 40).filter((c) => c.id.startsWith('season-'));
+    generateConcepts(inputFor(aspect)).filter((c) => c.id.startsWith('season-'));
+
+  it('reaches the app by DEFAULT, without a caller asking for more', () => {
+    // The regression: a default limit equal to the layout-strategy count made
+    // the seasonal concepts invisible while every test still passed.
+    const all = generateConcepts(inputFor(1));
+    expect(all.filter((c) => c.id.startsWith('season-'))).toHaveLength(SEASONAL_CAMPAIGNS.length);
+    expect(all.length).toBe(STRATEGIES.length + SEASONAL_CAMPAIGNS.length);
+  });
 
   it('offers one concept per campaign in the calendar', () => {
     expect(seasons()).toHaveLength(SEASONAL_CAMPAIGNS.length);
