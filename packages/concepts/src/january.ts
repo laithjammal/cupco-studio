@@ -33,10 +33,10 @@ import { boundaryURange } from '@cupco/geometry';
 const TEMPLATE = {
   id: 'january-2027',
   /** Height / width of the artwork. */
-  aspect: 836 / 1882,
+  aspect: 848 / 1855,
   /** The reserved disc, in IMAGE coordinates: u across, v UP. */
-  logo: { u: 0.498, v: 0.629, diameter: 0.199 },
-  paper: '#f9f8f0',
+  logo: { u: 0.4992, v: 0.6044, diameter: 0.202 },
+  paper: '#f6f5ec',
 };
 
 /**

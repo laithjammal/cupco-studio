@@ -45,7 +45,7 @@ describe('the January template', () => {
 
   it('agrees about the artwork proportions', () => {
     // The concept sizes the whole thing from this ratio.
-    expect(spec.aspect).toBeCloseTo(836 / 1882, 9);
+    expect(spec.aspect).toBeCloseTo(848 / 1855, 9);
   });
 
   it('agrees about the paper colour, which fills the bleed', () => {

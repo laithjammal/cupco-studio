@@ -14,9 +14,9 @@
  * carrying the pixel's own lightness through keeps the shading intact - a
  * berry still has a highlight, it is just no longer pink.
  *
- * HONEST LIMIT: the supplied January artwork is 1882px wide. A full wrap at
- * 300dpi needs 2732px, so it lands around 190dpi and preflight will say so.
- * That is a property of the file, not of this code; a larger export fixes it.
+ * RESOLUTION: the supplied January artwork is 1855px wide and is placed across
+ * 259mm, which is 182dpi. The 300dpi floor wants 3058px. That is a property of
+ * the file rather than of this code, and preflight will say so.
  */
 
 export interface TemplateSpec {
@@ -49,15 +49,15 @@ export const TEMPLATES: Record<string, TemplateSpec> = {
   'january-2027': {
     id: 'january-2027',
     src: '/templates/january-2027.png',
-    aspect: 836 / 1882,
+    aspect: 848 / 1855,
     // Measured off the file: greens sit at 150-170deg and the beans at
     // 20-30deg, so a 320-358 window takes the pink and nothing else.
     accentHue: [320, 358],
-    accentRef: { s: 0.982, l: 0.559 },
+    accentRef: { s: 0.982, l: 0.549 },
     accentMinSat: 0.3,
     // The dark disc the artwork reserves, measured from the file.
-    logo: { u: 0.498, v: 0.629, diameter: 0.199, clear: 0.86 },
-    paper: '#f9f8f0',
+    logo: { u: 0.4992, v: 0.6044, diameter: 0.202, clear: 0.86 },
+    paper: '#f6f5ec',
   },
 };
 

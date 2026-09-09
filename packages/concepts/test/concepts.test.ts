@@ -507,7 +507,7 @@ describe('January template', () => {
   it('still covers the cup top to bottom, with the overhang there instead', () => {
     const t = tpl(jan(GREEN));
     const { widthPx, heightPx } = CUP_8OZ.designCanvas;
-    const heightV = t.widthU! * (836 / 1882) * (widthPx / heightPx);
+    const heightV = t.widthU! * (848 / 1855) * (widthPx / heightPx);
     expect(t.v - heightV / 2).toBeLessThan(0);
     expect(t.v + heightV / 2).toBeGreaterThan(1);
   });
@@ -522,7 +522,7 @@ describe('January template', () => {
     expect(mark(c).kind).toBe('artwork');
     expect(c.placements.filter((p) => p.kind === 'artwork')).toHaveLength(1);
     // The disc sits just right of centre and above the middle in the artwork.
-    expect(mark(c).u).toBeCloseTo(0.498, 2);
+    expect(mark(c).u).toBeCloseTo(0.4992, 2);
     expect(mark(c).v).toBeGreaterThan(0.6);
     // It is a dark disc, so the mark has to read light on it.
     expect(mark(c).treatment).toEqual({ dropPlate: true, tone: 'lighten' });
@@ -534,7 +534,7 @@ describe('January template', () => {
     for (const aspect of [0.2, 0.5, 1, 2, 4]) {
       const c = jan(GREEN, aspect);
       const t = tpl(c);
-      const discW = 0.199 * t.widthU!;
+      const discW = 0.202 * t.widthU!;
       const discH = discW * ratio;
       const w = mark(c).widthU!;
       const h = w * aspect * ratio;
