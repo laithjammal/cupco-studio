@@ -15,8 +15,9 @@
  * berry still has a highlight, it is just no longer pink.
  *
  * RESOLUTION: the supplied January artwork is 1855px wide and is placed across
- * 259mm, which is 182dpi. The 300dpi floor wants 3058px. That is a property of
- * the file rather than of this code, and preflight will say so.
+ * the visible cup wall, about 165mm, which is 286dpi. The 300dpi floor wants
+ * 1948px. That is a property of the file rather than of this code, and
+ * preflight will say so.
  */
 
 export interface TemplateSpec {
@@ -51,13 +52,21 @@ export const TEMPLATES: Record<string, TemplateSpec> = {
     src: '/templates/january-2027.png',
     aspect: 848 / 1855,
     // Measured off the file: greens sit at 150-170deg and the beans at
-    // 20-30deg, so a 320-358 window takes the pink and nothing else.
+    // 16-30deg, so a 320-358 window takes the pink and nothing else. Of
+    // 1,573,040 pixels, 47,907 land inside it and 161 read as pink but fall
+    // outside - every one of those 161 touches an in-window pixel, so they
+    // are antialias fringe rather than artwork left behind.
     accentHue: [320, 358],
-    accentRef: { s: 0.982, l: 0.549 },
+    accentRef: { s: 0.976, l: 0.564 },
     accentMinSat: 0.3,
     // The dark disc the artwork reserves, measured from the file.
-    logo: { u: 0.4992, v: 0.6044, diameter: 0.202, clear: 0.86 },
-    paper: '#f6f5ec',
+    //
+    // The disc is LAYERED: solid dark to r=150px, a white ring at 151-159, a
+    // dark rim to 165, then paper. The diameter recorded here is the INNER
+    // dark field only - the mark belongs inside the ring, and the clearing
+    // circle must not paint over it.
+    logo: { u: 0.4989, v: 0.4911, diameter: 0.1617, clear: 0.70 },
+    paper: '#f9f7f1',
   },
 };
 

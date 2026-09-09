@@ -555,9 +555,9 @@ describe('January template', () => {
     const c = jan(GREEN);
     expect(mark(c).kind).toBe('artwork');
     expect(c.placements.filter((p) => p.kind === 'artwork')).toHaveLength(1);
-    // The disc sits just right of centre and above the middle in the artwork.
-    expect(mark(c).u).toBeCloseTo(0.4992, 2);
-    expect(mark(c).v).toBeGreaterThan(0.6);
+    // The disc sits a shade left of centre and just below the middle.
+    expect(mark(c).u).toBeCloseTo(0.4989, 2);
+    expect(mark(c).v).toBeCloseTo(0.4911, 2);
     // It is a dark disc, so the mark has to read light on it.
     expect(mark(c).treatment).toEqual({ dropPlate: true, tone: 'lighten' });
   });
@@ -568,7 +568,7 @@ describe('January template', () => {
     for (const aspect of [0.2, 0.5, 1, 2, 4]) {
       const c = jan(GREEN, aspect);
       const t = tpl(c);
-      const discW = 0.202 * t.widthU!;
+      const discW = 0.1617 * t.widthU!;
       const discH = discW * ratio;
       const w = mark(c).widthU!;
       const h = w * aspect * ratio;

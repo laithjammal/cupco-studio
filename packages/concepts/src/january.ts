@@ -36,8 +36,8 @@ const TEMPLATE = {
   /** Height / width of the artwork. */
   aspect: 848 / 1855,
   /** The reserved disc, in IMAGE coordinates: u across, v UP. */
-  logo: { u: 0.4992, v: 0.6044, diameter: 0.202 },
-  paper: '#f6f5ec',
+  logo: { u: 0.4989, v: 0.4911, diameter: 0.1617 },
+  paper: '#f9f7f1',
 };
 
 /**
