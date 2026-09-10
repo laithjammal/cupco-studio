@@ -9,7 +9,10 @@
  */
 
 import type { DesignUV } from '@cupco/geometry';
-import { elementCorners, halfExtent, type DesignElement } from './design';
+import {
+  elementCorners, halfExtent,
+  type Design, type DesignElement, type ElementId,
+} from './design';
 import type { Guide } from './snapping';
 
 export interface EditorMapping {
@@ -408,4 +411,137 @@ export function drawGuides(
     ctx.fillText(g.label, mid.x, mid.y);
   }
   ctx.restore();
+}
+
+/* ----------------------------- multi-select ------------------------------ */
+
+/** A marquee in design space, normalised so u0<u1 and v0<v1. */
+export interface Marquee { u0: number; u1: number; v0: number; v1: number }
+
+export function normaliseMarquee(a: DesignUV, b: DesignUV): Marquee {
+  return {
+    u0: Math.min(a.u, b.u), u1: Math.max(a.u, b.u),
+    v0: Math.min(a.v, b.v), v1: Math.max(a.v, b.v),
+  };
+}
+
+/**
+ * Elements the marquee catches.
+ *
+ * INTERSECTION, not containment. A marquee that only selected what it fully
+ * enclosed would refuse to pick up the full-bleed background - the very thing
+ * a person is most likely to be trying to grab - because it is larger than the
+ * canvas and can never be enclosed by anything.
+ */
+export function elementsInMarquee(
+  design: Design,
+  m: Marquee,
+  cw: number,
+  ch: number,
+  measure?: CanvasRenderingContext2D,
+): ElementId[] {
+  const out: ElementId[] = [];
+  for (const el of design.elements) {
+    const b = elementBounds(el, cw, ch, measure);
+    // u wraps, so an element straddling the seam is tested at three offsets -
+    // the same reason hitTest does.
+    const hitsU = [-1, 0, 1].some((du) => b.u0 + du <= m.u1 && b.u1 + du >= m.u0);
+    if (hitsU && b.v0 <= m.v1 && b.v1 >= m.v0) out.push(el.id);
+  }
+  return out;
+}
+
+/** The marquee itself, while it is being dragged. */
+export function drawMarquee(
+  ctx: CanvasRenderingContext2D,
+  m: Marquee,
+  mapping: EditorMapping,
+): void {
+  const a = mapping.toCanvas({ u: m.u0, v: m.v1 });
+  const b = mapping.toCanvas({ u: m.u1, v: m.v0 });
+  ctx.save();
+  ctx.fillStyle = 'rgba(37, 99, 235, 0.12)';
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
+  ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+  ctx.restore();
+}
+
+/**
+ * The outline for an element that is selected but is not the primary one.
+ *
+ * Deliberately quieter than drawSelection and carrying no handles: resize and
+ * rotate act on one element, so offering their grips on four at once would
+ * promise something the gesture does not do.
+ */
+export function drawSecondarySelection(
+  ctx: CanvasRenderingContext2D,
+  el: DesignElement,
+  mapping: EditorMapping,
+  cw: number,
+  ch: number,
+  measure?: CanvasRenderingContext2D,
+  subdivisions = 10,
+): void {
+  const uv = elementCorners(el, cw, ch, measure);
+  ctx.save();
+  ctx.beginPath();
+  for (let i = 0; i < uv.length; i++) {
+    const a = uv[i]!, b = uv[(i + 1) % uv.length]!;
+    for (let s = 0; s < subdivisions; s++) {
+      const k = s / subdivisions;
+      const p = mapping.toCanvas({ u: a.u + (b.u - a.u) * k, v: a.v + (b.v - a.v) * k });
+      if (i === 0 && s === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+    }
+  }
+  ctx.closePath();
+  ctx.strokeStyle = '#2563eb';
+  ctx.globalAlpha = 0.65;
+  ctx.lineWidth = 1.25;
+  ctx.setLineDash([5, 3]);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* -------------------------------- nudging -------------------------------- */
+
+/** Arrow key -> a step in design-document pixels, y counted UPWARD. */
+export const ARROW_STEPS: Record<string, readonly [number, number] | undefined> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, 1],
+  ArrowDown: [0, -1],
+};
+
+/** How much bigger a shift-held nudge is. */
+export const NUDGE_COARSE = 10;
+
+/**
+ * Where an element lands after an arrow-key nudge.
+ *
+ * The step is ONE PIXEL OF THE DESIGN DOCUMENT, not of the screen. A step
+ * measured in screen pixels would mean something different on each view and
+ * different again at another zoom, so the same keypress would move artwork by
+ * a different physical amount depending on how the operator happened to be
+ * looking at it.
+ */
+export function nudge(
+  el: { u: number; v: number },
+  key: string,
+  canvasW: number,
+  canvasH: number,
+  coarse = false,
+): { u: number; v: number } | null {
+  const step = ARROW_STEPS[key];
+  if (!step) return null;
+  const scale = coarse ? NUDGE_COARSE : 1;
+  const u = el.u + (step[0] * scale) / canvasW;
+  const v = el.v + (step[1] * scale) / canvasH;
+  return {
+    // u wraps at the seam; v is a finite height and clamps.
+    u: ((u % 1) + 1) % 1,
+    v: Math.max(0, Math.min(1, v)),
+  };
 }

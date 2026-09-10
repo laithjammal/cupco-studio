@@ -32,6 +32,7 @@ import PlateStudio from '@/components/PlateStudio';
 import Section from '@/components/Section';
 import StageToolbar from '@/components/StageToolbar';
 import { sampleColor, fillToTemplate, type EyedropTarget, type FillMode } from '@/lib/tools';
+import { nudge, ARROW_STEPS } from '@/lib/editor';
 import { preloadFonts, resolveWeight } from '@/lib/fonts';
 import {
   pickVideoMime, VIDEO_PRESETS, type RecordTurntable, type VideoPresetId,
@@ -74,7 +75,17 @@ export default function Page() {
   const design = history.state;
   /** Discrete edit — one undo step. */
   const setDesign = history.commit;
-  const [selectedId, setSelectedId] = useState<ElementId | null>(null);
+  /**
+   * Everything selected. The LAST entry is primary: the panels edit that one,
+   * and resize/rotate handles attach to it.
+   *
+   * Kept as an array rather than a Set so "which was chosen last" survives,
+   * which is what decides the primary.
+   */
+  const [selectedIds, setSelectedIds] = useState<ElementId[]>([]);
+  const selectedId = selectedIds.length > 0 ? selectedIds[selectedIds.length - 1]! : null;
+  const setSelectedId = useCallback(
+    (id: ElementId | null) => setSelectedIds(id ? [id] : []), []);
   const [revision, setRevision] = useState(0);
   const [spin, setSpin] = useState(false);
   const [resetToken, setResetToken] = useState(0);
@@ -361,7 +372,7 @@ export default function Page() {
 
   const removeElement = useCallback((id: ElementId) => {
     setDesign((d) => ({ ...d, elements: d.elements.filter((e) => e.id !== id) }));
-    setSelectedId((s) => (s === id ? null : s));
+    setSelectedIds((ids) => ids.filter((x) => x !== id));
   }, [setDesign]);
 
   const reorder = useCallback((id: ElementId, dir: -1 | 1) => {
@@ -442,20 +453,41 @@ export default function Page() {
         else pasteElement();
         return;
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && selectedId) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !typing && selectedIds.length > 0) {
         e.preventDefault();
-        removeElement(selectedId);
+        beginEdit();
+        for (const id of selectedIds) removeElement(id);
+        return;
+      }
+      if (mod && !typing && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        setSelectedIds(design.elements.map((el) => el.id));
+        return;
+      }
+      // Arrow keys nudge. The step is ONE PIXEL of the design document, so it
+      // means the same thing on both editing views and on the exported file -
+      // a step measured in screen pixels would change with the zoom.
+      if (!typing && selectedIds.length > 0 && ARROW_STEPS[e.key]) {
+        e.preventDefault();
+        beginEdit();
+        const { widthPx, heightPx } = profile.designCanvas;
+        for (const id of selectedIds) {
+          const el = design.elements.find((x) => x.id === id);
+          if (!el) continue;
+          const to = nudge(el, e.key, widthPx, heightPx, e.shiftKey);
+          if (to) patchElement(id, to);
+        }
         return;
       }
       if (e.key === 'Escape') {
         setEyedrop(null);
-        setSelectedId(null);
+        setSelectedIds([]);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // removeElement is stable; selectedId and history change with state.
-  }, [history, selectedId, copySelected, pasteElement]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [history, selectedId, selectedIds, design.elements, profile, copySelected, pasteElement]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Sample a colour from the visible canvas and apply it. */
   const onEyedrop = useCallback((canvas: HTMLCanvasElement, px: number, py: number) => {
@@ -674,7 +706,10 @@ export default function Page() {
           <label>Layers <span className="hint" style={{ float: 'right', fontWeight: 400 }}>top = front</span></label>
           <ul className="layers">
             {[...design.elements].reverse().map((el) => (
-              <li key={el.id} data-sel={el.id === selectedId} onClick={() => setSelectedId(el.id)}>
+              <li key={el.id} data-sel={selectedIds.includes(el.id)}
+                onClick={(e) => setSelectedIds((ids) => (e.shiftKey
+                  ? (ids.includes(el.id) ? ids.filter((x) => x !== el.id) : [...ids, el.id])
+                  : [el.id]))}>
                 <span className="layers__name" title={el.name}>
                   {el.type === 'image' ? '▣' : el.type === 'vector' ? '◆'
                     : el.type === 'band' ? '▬' : el.type === 'qr' ? '▦' : 'T'} {el.name}
@@ -952,15 +987,15 @@ export default function Page() {
           {tab === 'fan' && (
             <FanView profile={profile} geom={geom} design={design}
               designCanvas={fanCanvasRef.current} vRange={fanVRange} revision={revision}
-              showGuides={showGuides} selectedId={selectedId}
-              onSelect={setSelectedId} onChange={patchElement}
+              showGuides={showGuides} selectedIds={selectedIds}
+              onSelect={setSelectedIds} onChange={patchElement}
               onBeginEdit={beginEdit}
               eyedropActive={eyedrop !== null} onEyedrop={onEyedrop} />
           )}
           {tab === 'design' && (
             <DesignView profile={profile} geom={geom} design={design} revision={revision}
-              showGuides={showGuides} selectedId={selectedId}
-              onSelect={setSelectedId} onChange={patchElement}
+              showGuides={showGuides} selectedIds={selectedIds}
+              onSelect={setSelectedIds} onChange={patchElement}
               onBeginEdit={beginEdit}
               eyedropActive={eyedrop !== null} onEyedrop={onEyedrop}
               proofCmyk={proofCmyk} />

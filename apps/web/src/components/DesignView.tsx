@@ -15,7 +15,9 @@
 import { useEffect, useRef, useMemo, useCallback } from 'react';
 import type { CupProfile, FrustumGeometry } from '@cupco/geometry';
 import { renderDesign, type Design, type DesignElement, type ElementId } from '@/lib/design';
-import { drawSelection, drawGuides, type EditorMapping } from '@/lib/editor';
+import {
+  drawSelection, drawSecondarySelection, drawGuides, drawMarquee, type EditorMapping,
+} from '@/lib/editor';
 import { useCanvasEditor } from '@/lib/useCanvasEditor';
 
 export interface DesignViewProps {
@@ -24,8 +26,8 @@ export interface DesignViewProps {
   design: Design;
   revision: number;
   showGuides: boolean;
-  selectedId: ElementId | null;
-  onSelect: (id: ElementId | null) => void;
+  selectedIds: readonly ElementId[];
+  onSelect: (ids: ElementId[]) => void;
   onChange: (id: ElementId, patch: Partial<DesignElement>) => void;
   /** Called once at the start of a gesture, so a drag costs one undo step. */
   onBeginEdit: () => void;
@@ -39,7 +41,7 @@ export interface DesignViewProps {
 const VIEW_W = 1100;
 
 export default function DesignView({
-  profile, geom, design, revision, showGuides, selectedId, onSelect, onChange,
+  profile, geom, design, revision, showGuides, selectedIds, onSelect, onChange,
   onBeginEdit, eyedropActive, onEyedrop, proofCmyk,
 }: DesignViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -62,8 +64,8 @@ export default function DesignView({
     toCanvas: (uv) => ({ x: uv.u * VIEW_W, y: (1 - uv.v) * viewH }),
   }), [viewH]);
 
-  const { cursor, activeGuides, handlers } = useCanvasEditor({
-    design, selectedId, onSelect, onChange, onBeginEdit, mapping,
+  const { cursor, activeGuides, marquee, handlers } = useCanvasEditor({
+    design, selectedIds, onSelect, onChange, onBeginEdit, mapping,
     canvasRef, canvasW: cw, canvasH: ch,
     measure: measureRef.current ?? undefined,
   });
@@ -82,10 +84,17 @@ export default function DesignView({
 
     if (showGuides) drawDesignGuides(ctx, profile, geom, VIEW_W, viewH);
 
-    const sel = design.elements.find((e) => e.id === selectedId);
-    if (sel) drawSelection(ctx, sel, mapping, cw, ch, measureRef.current ?? undefined, 2);
+    // Handles only when exactly one is selected; the rest get a quieter
+    // outline, because resize and rotate act on one element.
+    const primary = selectedIds.length === 1 ? selectedIds[0] : null;
+    for (const el of design.elements) {
+      if (!selectedIds.includes(el.id)) continue;
+      if (el.id === primary) drawSelection(ctx, el, mapping, cw, ch, measureRef.current ?? undefined, 2);
+      else drawSecondarySelection(ctx, el, mapping, cw, ch, measureRef.current ?? undefined, 2);
+    }
     drawGuides(ctx, activeGuides, mapping, 2);
-  }, [design, viewH, showGuides, profile, geom, selectedId, mapping, cw, ch, activeGuides, proofCmyk]);
+    if (marquee) drawMarquee(ctx, marquee, mapping);
+  }, [design, viewH, showGuides, profile, geom, selectedIds, mapping, cw, ch, activeGuides, proofCmyk, marquee]);
 
   useEffect(() => { paint(); }, [paint, revision]);
 
@@ -120,7 +129,7 @@ export default function DesignView({
           </>
         )}
         <span className="legend__item" style={{ marginLeft: 'auto' }}>
-          Click to select · drag to move · corners resize · top handle rotates
+          Click to select · shift-click or drag a box for several · arrows nudge · ⌘/ctrl-drag for fine control
         </span>
       </div>
     </div>

@@ -18,6 +18,7 @@ import { rasteriseFan, fanMmToPixel, type FanRasterTransform } from '@cupco/rend
 import type { Design, DesignElement, ElementId } from '@/lib/design';
 import {
   drawSelection, drawGuides as drawAlignmentGuides, type EditorMapping,
+  drawSecondarySelection, drawMarquee,
 } from '@/lib/editor';
 import { useCanvasEditor } from '@/lib/useCanvasEditor';
 
@@ -30,8 +31,8 @@ export interface FanViewProps {
   vRange: { vBottom: number; vTop: number };
   revision: number;
   showGuides: boolean;
-  selectedId: ElementId | null;
-  onSelect: (id: ElementId | null) => void;
+  selectedIds: readonly ElementId[];
+  onSelect: (ids: ElementId[]) => void;
   onChange: (id: ElementId, patch: Partial<DesignElement>) => void;
   /** Called once at the start of a gesture, so a drag costs one undo step. */
   onBeginEdit: () => void;
@@ -60,7 +61,7 @@ const DRAG_DPI = 40;
 
 export default function FanView({
   profile, geom, design, designCanvas, vRange, revision, showGuides,
-  selectedId, onSelect, onChange, onBeginEdit, eyedropActive, onEyedrop, previewDpi = 96,
+  selectedIds, onSelect, onChange, onBeginEdit, eyedropActive, onEyedrop, previewDpi = 96,
 }: FanViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rasterRef = useRef<ImageData | null>(null);
@@ -103,8 +104,8 @@ export default function FanView({
     },
   }), [transform, geom]);
 
-  const { dragging, cursor, activeGuides, handlers } = useCanvasEditor({
-    design, selectedId, onSelect, onChange, onBeginEdit, mapping,
+  const { dragging, cursor, activeGuides, marquee, handlers } = useCanvasEditor({
+    design, selectedIds, onSelect, onChange, onBeginEdit, mapping,
     canvasRef, canvasW: cw, canvasH: ch,
     measure: measureRef.current ?? undefined,
   });
@@ -162,12 +163,18 @@ export default function FanView({
     ctx.putImageData(raster, 0, 0);
     if (showGuides) drawGuides(ctx, profile, geom, transform);
 
-    const sel = design.elements.find((e) => e.id === selectedId);
+    const primary = selectedIds.length === 1 ? selectedIds[0] : null;
+    for (const el of design.elements) {
+      if (!selectedIds.includes(el.id)) continue;
+      if (el.id !== primary) drawSecondarySelection(ctx, el, mapping, cw, ch, undefined, 10);
+    }
+    if (marquee) drawMarquee(ctx, marquee, mapping);
+    const sel = design.elements.find((e) => e.id === primary);
     if (sel) {
       drawSelection(ctx, sel, mapping, cw, ch, measureRef.current ?? undefined);
     }
     drawAlignmentGuides(ctx, activeGuides, mapping);
-  }, [transform, showGuides, profile, geom, design.elements, selectedId, mapping, cw, ch, revision, activeGuides]);
+  }, [transform, showGuides, profile, geom, design.elements, selectedIds, mapping, cw, ch, revision, activeGuides, marquee]);
 
   return (
     <div className="fanview">
