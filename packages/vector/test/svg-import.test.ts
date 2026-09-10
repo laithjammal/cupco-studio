@@ -157,3 +157,49 @@ describe('silent losses', () => {
     expect(r.warnings.join(' ')).toMatch(/clipping/);
   });
 });
+
+/**
+ * fill-rule.
+ *
+ * Two subpaths wound the same way are ONE SOLID AREA under nonzero - which is
+ * SVG's default - and a HOLE under even-odd. The app filled every imported
+ * path even-odd regardless of what the file said, which punched gaps through
+ * logos that had none, and the SVG export wrote no rule at all, so the printed
+ * file and the approved preview disagreed with each other.
+ */
+describe('fill-rule', () => {
+  const wrap = (b: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">${b}</svg>`;
+  const rules = (b: string) => importSvg(wrap(b)).shapes.map((s) => s.fillRule);
+
+  it('defaults to nonzero, as SVG does', () => {
+    expect(rules('<path fill="#c8102e" d="M10 10H60V60H10Z"/>')).toEqual(['nonzero']);
+  });
+
+  it('reads an explicit rule either way', () => {
+    expect(rules('<path fill="#c8102e" fill-rule="evenodd" d="M10 10H60V60H10Z"/>'))
+      .toEqual(['evenodd']);
+    expect(rules('<path fill="#c8102e" fill-rule="nonzero" d="M10 10H60V60H10Z"/>'))
+      .toEqual(['nonzero']);
+  });
+
+  it('inherits it from a group', () => {
+    expect(rules('<g fill-rule="evenodd"><path fill="#c8102e" d="M10 10H60V60H10Z"/></g>'))
+      .toEqual(['evenodd']);
+  });
+
+  it('takes it from the stylesheet, with an inline style still winning', () => {
+    expect(rules('<style>.a{fill:#c8102e;fill-rule:evenodd;}</style><path class="a" d="M10 10H60V60H10Z"/>'))
+      .toEqual(['evenodd']);
+    expect(rules('<style>.a{fill-rule:evenodd;}</style>'
+      + '<path class="a" fill="#c8102e" style="fill-rule:nonzero" d="M10 10H60V60H10Z"/>'))
+      .toEqual(['nonzero']);
+  });
+
+  it('always fills a stroke outline nonzero', () => {
+    // The outline self-overlaps at a tight corner by design. Under even-odd
+    // every one of those overlaps becomes a hole in the middle of the line.
+    expect(rules('<path fill="none" stroke="#c8102e" stroke-width="6" d="M10 50 L50 10 L90 50"/>'))
+      .toEqual(['nonzero']);
+  });
+});

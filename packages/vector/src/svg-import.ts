@@ -17,10 +17,21 @@ import { flattenPathData, type Pt, type SubPath } from './path-data';
 import { strokeToSubpaths } from './stroke';
 import { hexToRgb, type RGB } from './color';
 
+/**
+ * How a path decides what is inside it.
+ *
+ * SVG's default is `nonzero`, under which two overlapping subpaths wound the
+ * same way merge into one solid area. Under `evenodd` the overlap becomes a
+ * HOLE. Getting this wrong punches gaps through a logo that has none, so the
+ * rule travels with the shape rather than being assumed downstream.
+ */
+export type FillRule = 'nonzero' | 'evenodd';
+
 export interface ImportedShape {
   subpaths: SubPath[];
   fill: RGB;
   opacity: number;
+  fillRule: FillRule;
 }
 
 export interface SvgImportResult {
@@ -137,6 +148,7 @@ const NAMED: Record<string, RGB> = {
 interface Paint {
   fill: RGB | null;
   opacity: number;
+  fillRule: FillRule;
   /** A stroke is filled geometry by the time it leaves here - see ./stroke. */
   stroke: RGB | null;
   strokeWidth: number;
@@ -166,10 +178,14 @@ function resolvePaint(node: XNode, inherited: Paint, rules: readonly CssRule[] =
     return parseColour(v) ?? inheritedColour;
   };
 
+  const ruleRaw = (prop('fill-rule') ?? '').trim().toLowerCase();
   const strokeWidthRaw = prop('stroke-width');
   return {
     fill: colour(prop('fill'), inherited.fill),
     opacity,
+    fillRule: ruleRaw === 'evenodd' ? 'evenodd'
+      : ruleRaw === 'nonzero' ? 'nonzero'
+      : inherited.fillRule,
     stroke: colour(prop('stroke'), inherited.stroke),
     strokeWidth: strokeWidthRaw === undefined ? inherited.strokeWidth : num(strokeWidthRaw, 1),
     warning,
@@ -445,7 +461,9 @@ export function importSvg(source: string): SvgImportResult {
     }));
 
     if (p.fill) {
-      shapes.push({ subpaths: place(subs), fill: p.fill, opacity: p.opacity });
+      shapes.push({
+        subpaths: place(subs), fill: p.fill, opacity: p.opacity, fillRule: p.fillRule,
+      });
     }
 
     // The stroke is outlined in the element's OWN coordinates and transformed
@@ -454,7 +472,11 @@ export function importSvg(source: string): SvgImportResult {
     if (p.stroke && p.strokeWidth > 0) {
       const outline = strokeToSubpaths(subs, p.strokeWidth);
       if (outline.length > 0) {
-        shapes.push({ subpaths: place(outline), fill: p.stroke, opacity: p.opacity });
+        // A stroke outline self-overlaps at tight corners by design; under
+        // even-odd those overlaps would punch holes along the line.
+        shapes.push({
+          subpaths: place(outline), fill: p.stroke, opacity: p.opacity, fillRule: 'nonzero',
+        });
       }
     }
   };
@@ -464,7 +486,9 @@ export function importSvg(source: string): SvgImportResult {
       if (c.tag !== 'defs' && c.tag !== 'symbol') warnings.add(`<${c.tag}> is not interpreted`);
       continue;
     }
-    emit(c, base, { fill: [0, 0, 0], opacity: 1, stroke: null, strokeWidth: 1 }, new Set());
+    emit(c, base,
+      { fill: [0, 0, 0], opacity: 1, stroke: null, strokeWidth: 1, fillRule: 'nonzero' },
+      new Set());
   }
 
   if (shapes.length === 0) warnings.add('No filled shapes found');

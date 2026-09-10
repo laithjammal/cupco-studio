@@ -85,6 +85,9 @@ export async function loadSvgAsset(file: File): Promise<LoadedAsset> {
     subpaths: s.subpaths.map((sp) => ({ points: sp.map((p) => ({ x: p.x, y: p.y })), closed: true })),
     fill: s.fill,
     opacity: s.opacity,
+    // Carried, not defaulted: re-normalising must not quietly change how a
+    // path decides what is inside it.
+    fillRule: s.fillRule ?? 'nonzero',
   }))) : raw;
 
   const warnings = [...res.warnings];

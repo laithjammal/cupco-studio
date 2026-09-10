@@ -97,6 +97,14 @@ export interface DesignShape {
   fill: readonly [number, number, number];
   /** 0-1. */
   opacity: number;
+  /**
+   * How the path decides what is inside it.
+   *
+   * Carried all the way to the printer. Dropping it here would let the
+   * exported file fill differently from the preview - two overlapping
+   * subpaths are one solid area under `nonzero` and a hole under `evenodd`.
+   */
+  fillRule?: 'nonzero' | 'evenodd';
 }
 
 /** The same shape warped onto the fan, in millimetres. */
@@ -104,6 +112,7 @@ export interface FanShape {
   subpaths: Point2[][];
   fill: readonly [number, number, number];
   opacity: number;
+  fillRule?: 'nonzero' | 'evenodd';
 }
 
 export function warpShape(
@@ -112,6 +121,7 @@ export function warpShape(
   toleranceMm: number = DEFAULT_FLATNESS_MM,
 ): FanShape {
   return {
+    fillRule: shape.fillRule,
     subpaths: shape.subpaths.map((ring) => warpPolyline(ring, geom, toleranceMm)),
     fill: shape.fill,
     opacity: shape.opacity,

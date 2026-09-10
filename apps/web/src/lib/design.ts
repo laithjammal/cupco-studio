@@ -581,7 +581,10 @@ export function renderDesign(
             });
             ctx.closePath();
           }
-          ctx.fill('evenodd');
+          // The shape's OWN rule. Imported artwork states it; generated
+          // artwork leaves it unset and means even-odd. Assuming one rule for
+          // both punched holes through logos that had none.
+          ctx.fill(shape.fillRule ?? 'evenodd');
         }
       } else if (el.content.trim() !== '') {
         const sizePx = Math.max(4, el.sizeV * pxPerV);

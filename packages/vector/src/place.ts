@@ -9,10 +9,24 @@
 import type { DesignShape } from '@cupco/geometry';
 import type { ImportedShape } from './svg-import';
 import type { RGB } from './color';
+import type { FillRule } from './svg-import';
 
 export interface PlacedArtwork {
-  /** Source shapes, normalised to a unit box with y still pointing down. */
-  shapes: { subpaths: { x: number; y: number }[][]; fill: RGB; opacity: number }[];
+  /**
+   * Source shapes, normalised to a unit box with y still pointing down.
+   *
+   * `fillRule` is OPTIONAL, and its absence means `evenodd`. That is not the
+   * SVG default - it is the house rule the generated artwork in this package
+   * was drawn against, and flipping it under them would punch holes through
+   * motifs that are correct today. Imported artwork always states its rule
+   * explicitly, taken from the file.
+   */
+  shapes: {
+    subpaths: { x: number; y: number }[][];
+    fill: RGB;
+    opacity: number;
+    fillRule?: FillRule;
+  }[];
   /** Aspect ratio (height / width) of the source artwork. */
   aspect: number;
 }
@@ -48,6 +62,7 @@ export function normaliseArtwork(
     shapes: shapes.map((s) => ({
       fill: s.fill,
       opacity: s.opacity,
+      fillRule: s.fillRule,
       subpaths: s.subpaths.map((sp) => sp.points.map((p) => ({
         x: (p.x - minX) / w,   // 0..1
         y: (p.y - minY) / h,   // 0..1, still y-down
@@ -93,6 +108,9 @@ export function placeArtwork(
   return art.shapes.map((s) => ({
     fill: s.fill,
     opacity: s.opacity,
+    // Carried through to the printer: dropping it here would let the exported
+    // file fill differently from the preview that was approved.
+    fillRule: s.fillRule,
     subpaths: s.subpaths.map((sp) => sp.map((p) => {
       // Centre the unit box, scale to pixels, rotate, then normalise.
       const x = (p.x - 0.5) * wPx;

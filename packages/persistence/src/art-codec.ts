@@ -40,6 +40,11 @@ export function quantiseArt(art: StoredArt): StoredArt {
     shapes: art.shapes.map((shape) => ({
       fill: [shape.fill[0], shape.fill[1], shape.fill[2]] as StoredArt['shapes'][number]['fill'],
       opacity: round(shape.opacity, 4),
+      // Named explicitly, because this function rebuilds a shape field by
+      // field rather than spreading it - anything not listed here is dropped
+      // on save. fillRule was, so an imported logo came back from storage
+      // filling even-odd and grew holes it did not have when it arrived.
+      ...(shape.fillRule ? { fillRule: shape.fillRule } : {}),
       subpaths: shape.subpaths.map((sp) =>
         sp.map((p) => ({ x: round(p.x, COORD_PRECISION), y: round(p.y, COORD_PRECISION) }))),
     })),

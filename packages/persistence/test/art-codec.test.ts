@@ -83,3 +83,36 @@ describe('artwork quantisation', () => {
     expect(q.aspect).toBeCloseTo(0.5123456789, 6);
   });
 });
+
+/**
+ * quantiseArt rebuilds a shape field by field, so anything not named is
+ * dropped on save. fillRule was - which meant an imported logo arrived
+ * correct, then came back from storage filling even-odd and grew holes it
+ * never had. Anything added to a shape in future needs a line here too.
+ */
+describe('quantiseArt keeps what a shape needs', () => {
+  const shape = (fillRule?: 'nonzero' | 'evenodd') => ({
+    fill: [1, 2, 3] as const,
+    opacity: 0.5,
+    subpaths: [[{ x: 0.123456789, y: 0.987654321 }]],
+    ...(fillRule ? { fillRule } : {}),
+  });
+
+  it('round-trips an explicit fill rule', () => {
+    expect(quantiseArt({ aspect: 1, shapes: [shape('nonzero')] } as never)
+      .shapes[0]!.fillRule).toBe('nonzero');
+    expect(quantiseArt({ aspect: 1, shapes: [shape('evenodd')] } as never)
+      .shapes[0]!.fillRule).toBe('evenodd');
+  });
+
+  it('leaves it absent when the artwork never stated one', () => {
+    expect(quantiseArt({ aspect: 1, shapes: [shape()] } as never)
+      .shapes[0]!.fillRule).toBeUndefined();
+  });
+
+  it('survives a JSON round trip, which is how it is actually stored', () => {
+    const out = JSON.parse(JSON.stringify(
+      quantiseArt({ aspect: 1, shapes: [shape('nonzero')] } as never)));
+    expect(out.shapes[0].fillRule).toBe('nonzero');
+  });
+});

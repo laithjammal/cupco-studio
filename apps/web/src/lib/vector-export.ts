@@ -324,7 +324,12 @@ export function exportFanSvgVector(
     const rgbStr = `rgb(${s.fill[0]},${s.fill[1]},${s.fill[2]})`;
     // SVG has no CMYK colour space, so the ink values ride along as a data
     // attribute: the RGB is for display, the attribute is the print intent.
-    return `    <path d="${d}" fill="${rgbStr}"${s.opacity < 1 ? ` fill-opacity="${s.opacity}"` : ''}` +
+    // The fill rule has to be written out. SVG's default is nonzero, but the
+    // preview fills generated artwork even-odd - left implicit, the printed
+    // file would fill differently from what was approved on screen.
+    const rule = s.fillRule ?? 'evenodd';
+    return `    <path d="${d}" fill="${rgbStr}" fill-rule="${rule}"`
+      + `${s.opacity < 1 ? ` fill-opacity="${s.opacity}"` : ''}` +
       ` data-cmyk="${(v.c * 100).toFixed(1)},${(v.m * 100).toFixed(1)},${(v.y * 100).toFixed(1)},${(v.k * 100).toFixed(1)}"/>`;
   }).filter(Boolean).join('\n');
 

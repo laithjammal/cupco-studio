@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shapeArea } from '../src/place';
+import { shapeArea, placeArtwork } from '../src/place';
 
 describe('shapeArea', () => {
   const sq = (a: number) => [[
@@ -22,5 +22,21 @@ describe('shapeArea', () => {
   it('is signless, so winding order cannot make an area negative', () => {
     const cw = sq(0.5)[0]!;
     expect(shapeArea([[...cw].reverse()])).toBeCloseTo(0.25, 9);
+  });
+});
+
+describe('placeArtwork carries the fill rule', () => {
+  it('keeps a shape rule when placing it into design space', () => {
+    const art = {
+      aspect: 1,
+      shapes: [
+        { subpaths: [[{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }]], fill: [0, 0, 0] as const, opacity: 1, fillRule: 'evenodd' as const },
+        { subpaths: [[{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }]], fill: [0, 0, 0] as const, opacity: 1, fillRule: 'nonzero' as const },
+      ],
+    };
+    const out = placeArtwork(art as never, {
+      u: 0.5, v: 0.5, widthU: 0.2, rotation: 0, canvasW: 1000, canvasH: 500,
+    });
+    expect(out.map((s) => s.fillRule)).toEqual(['evenodd', 'nonzero']);
   });
 });
