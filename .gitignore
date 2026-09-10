@@ -18,3 +18,8 @@ out/
 
 # Env
 .env*.local
+
+# Cupco's manufacturing drawing. Kept on disk and used as the reference the
+# 8oz profile was measured against, but NOT committed: it is the customer's
+# confidential document and this repository is public.
+Drawings/
