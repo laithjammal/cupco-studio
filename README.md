@@ -8,18 +8,18 @@ engine**. There is no second, approximate mockup pipeline that could drift out o
 
 ## Status
 
-Roughly 17,600 lines of TypeScript across eight packages. **489 tests, all passing.**
+Roughly 17,600 lines of TypeScript across eight packages. **630 tests, all passing.**
 
 | Area | State | Tests |
 |---|---|---|
-| Geometry engine, 8oz profile, elevation, plates | ✅ | 140 |
-| Fan rasteriser | ✅ | 18 |
-| Vector: SVG import, tracing, palettes, CMYK | ✅ | 48 |
-| QR codes: six styles, decoded by two decoders | ✅ | 62 |
-| Concept generation (10 layouts) | ✅ | 35 |
-| Persistence: assets, migration, GC, plates | ✅ | 55 |
-| Preflight: 12 production rules | ✅ | 48 |
-| App: serialisation, snapping, uploads, plate fitting | ✅ | 83 |
+| Geometry engine, 8oz profile, elevation, plates | ✅ | 154 |
+| Fan rasteriser | ✅ | 23 |
+| Vector: SVG import, strokes, tracing, palettes, CMYK | ✅ | 97 |
+| QR codes: six styles, decoded by two decoders | ✅ | 63 |
+| Concept generation (10 layouts + 13 seasonal) | ✅ | 64 |
+| Persistence: assets, migration, GC, plates | ✅ | 58 |
+| Preflight: 13 production rules | ✅ | 55 |
+| App: serialisation, snapping, uploads, selection, plate fitting | ✅ | 116 |
 | 3D cup, graduated studio backdrop, turntable MP4 | ✅ | — |
 | Photo mockups: artwork composited onto real cups | ✅ | — |
 | Drawn mockups, five settings | ✅ | — |
@@ -44,6 +44,12 @@ The gaps, roughly in order of how much they hurt:
 - 12oz and 16oz dimensions (top Ø, bottom Ø, height) — same three numbers as 8oz
 - The 12oz and 16oz cut lines, per edge, measured off a real blank as the 8oz was
 - Whether the printer wants certified PDF/X, or whether CMYK vector is sufficient
+- **Which edge of the seam laps over which.** `seam.visibleStartOffsetMm` is declared
+  on every profile and set to 7.5mm, and **nothing in the codebase reads it** — so the
+  app cannot currently warn that artwork will disappear under the glue lap. Knowing
+  which end goes on top is enough to wire it up, for every design rather than one.
+- **The January template at 2655px wide.** The supplied file is 1855px, which is 210dpi
+  across the fan. Same artwork, same proportions, just re-exported larger.
 
 ## Run it
 
@@ -117,6 +123,42 @@ angle and top radius to 0.012mm. This was a real error in the profile, corrected
 Tracing is **opt-in**, not automatic: it is excellent on flat-colour logos and poor on
 photographs, so the operator decides. A traced logo exports as genuine vector CMYK.
 
+### What the SVG importer handles, and what it still does not
+
+Real logos are not the tidy SVGs a parser is first written against. Everything below
+was found by a real file arriving wrong, and each one failed **silently** — the import
+looked finished, so nothing said the artwork was already damaged.
+
+| Feature | Handled | Why it mattered |
+|---|---|---|
+| **Internal `<style>` blocks** | ✅ | Illustrator's *default* export puts every colour in a stylesheet and references it by class. Without this every shape fell through to the inherited default and the whole logo arrived **solid black**. |
+| **`class` selectors, the cascade** | ✅ | id over class over tag, later rule breaking a tie; inline `style` beats the stylesheet, which beats a presentation attribute — as the spec says. |
+| **CDATA around the CSS** | ✅ | Drawing tools wrap it; the element scanner strips CDATA, so the CSS is pulled from the raw source *before* parsing. It has to be, because CSS may contain `>` and would derail the scanner. |
+| **Strokes** | ✅ | A stroke has no area, and everything downstream works on filled areas. Line-art logos — a monogram inside an outlined circle — arrived with **every stroked element missing**. Strokes are now outlined into fills. |
+| **`fill-rule`** | ✅ | Two subpaths wound the same way are one solid area under `nonzero` and a **hole** under `evenodd`. The rule was never read, and three places downstream each assumed one — so logos grew gaps they never had. |
+| **`<use>`** | ✅ | Its target almost always lives in `<defs>`, which is never walked, so it drew nothing and said nothing. Both `href` and `xlink:href`, `<symbol>` targets expanded, reference cycles cut. |
+| **Unquoted / valueless attributes** | ✅ | The tag pattern required `name="value"` for every attribute. One stray attribute failed the whole match and the element was dropped without a word. |
+| **Clip paths and masks** | ⚠️ reported | Not applied. Unapplied clipping makes artwork extend **further** than intended, which is the kind of surprise that reaches a printer. |
+| **Live `<text>`** | ⚠️ reported | Convert type to outlines first. |
+| **Gradients and patterns** | ⚠️ reported | Flattened to a solid colour. |
+| **Embedded `<image>`** | ⚠️ reported | Skipped. |
+
+Two general lessons sit behind that table, both worth keeping:
+
+- **Silence is the bug.** Every one of these was a wrong result that looked like a
+  finished import. Anything the importer cannot do now says so.
+- **What is stored is the parsed result, not the file.** So each of these fixes only
+  helps artwork uploaded *after* it — existing logos have to be re-uploaded. Keeping
+  the source file alongside the parse would end that, and is worth doing.
+
+Stroke outlining is checked by **area**, not by eye. A stroked circle must come out as
+an annulus (`2·π·r·w`), not a filled disc — the two boundaries have to wind oppositely
+or a non-zero fill floods the middle. And a straight line's two round caps must both
+bulge *outward*: at exactly half a turn the short way round is a coin toss, and the
+first version had one cap bulging out and the other in. They cancel to exactly
+`length × width`, which looks entirely reasonable in a list of points and is visible
+only as a number.
+
 PDF and AI are **rasterised, not vector-extracted** — pdf.js renders to a canvas and does
 not expose path geometry cleanly. Reaching vector from a PDF therefore means tracing a
 render, which is an approximation of an approximation. If the customer can send an SVG,
@@ -152,6 +194,73 @@ colour, not at random, so a navy logo never lands on a navy field.
 
 Strategies implement a `ConceptStrategy` interface, so an AI-backed generator can be
 added later without touching the data model.
+
+## Seasonal templates
+
+A second kind of concept, and deliberately different from the ten generated layouts.
+A template is a **finished illustration** drawn by a designer, with two things marked in
+it: an accent colour meant to be replaced, and a disc reserved for the customer's logo.
+Everything else is left exactly as drawn. One kind scales to anything; the other looks
+like someone made it. Both belong.
+
+January is the one built against a real supplied file. Its geometry is **measured off
+the artwork**, not eyeballed, and pinned by tests so a redraw fails loudly rather than
+misplacing a logo quietly.
+
+### Recolouring to the brand
+
+The accent is identified by **hue**, not by an exact value: the artwork is anti-aliased
+and shaded, so replacing a flat `#ED1E79` would leave a pink fringe on every edge and
+lose every highlight. Selecting a hue window and carrying each pixel's own deviation
+through keeps the shading — a berry still has a highlight, it is just no longer pink.
+
+Which brand colour drives it is scored on **chroma × coverage**, and the chroma part is
+load-bearing. HSL *saturation* is 1.0 for every colour on the line from black to a pure
+hue, so a near-black maroon at lightness 0.24 scores a perfect 1.00 and beats the
+terracotta a café is actually known by. That is how a cup's highlights came out almost
+black while being, technically, a colour from the logo. Chroma rates the two the same,
+which lets coverage decide.
+
+Coverage itself is weighted by **area**, not by shape count: a traced logo routinely
+emits a hundred antialiased slivers around the two paths carrying the brand colour.
+
+### Fitting a rectangle to a cup
+
+Harder than it looks, and worth writing down because two obvious answers are both wrong.
+
+The blank is **37% taller than the visible cup** — the die's top curl, base tuck and
+bleed all add to it. So artwork drawn edge-to-edge on the blank shows only its **middle
+71%** once the cup is made, and reads as far too big with the sky and the hills cut
+away. Fit it to the visible wall instead and it no longer reaches the edges, leaving
+paper at the seam.
+
+The resolution is: **fill the bleed box exactly** — reach every edge, overrun none.
+Overrunning is not free, because the raster export clips to the die outline but the
+**vector export does not**, so ink past the bleed lands outside the blank and, on an
+imposed sheet, on the next cup along.
+
+The die is asymmetric — base tuck 17.7mm against the top curl's 14.0mm — which is what
+makes those two requirements pull apart. Registering the design to the **blank's**
+centre rather than the visible wall's closes the gap for nothing; the composition then
+sits about 3mm low on the cup, which is the cheaper price.
+
+A template therefore has a **live area**: on the 8oz, rows 101–720 of an 848px file.
+Anything outside that is bleed. A template drawn edge-to-edge *with content in it* loses
+that content, so the live area belongs in the brief rather than being discovered on a
+printed cup.
+
+### The seam wrap trap
+
+Design space is a cylinder cut open at u=0, so every element is drawn three times — at
+−width, 0 and +width — and one straddling the seam shows at both edges.
+
+**Not** for an element that already spans the whole circumference. Its wrapped copies
+land on top of *itself*, and each one paints the far side of the artwork over the near
+side. A full-bleed template lost its right-hand lettering underneath its own left-hand
+edge that way, which read as the words being trimmed off. The same trap exists on the
+vector path, where the visibility check asked whether any *vertex* fell inside the
+sector — a shape wide enough to straddle the whole sector has every vertex outside it
+while covering all of it, so the check discarded precisely the shapes that matter most.
 
 ## Saving your work
 
@@ -296,6 +405,38 @@ drag to move, corners resize, top handle rotates.
   always the intent. Hold **alt** to suspend snapping.
 - **⌘Z / ⇧⌘Z** undo and redo. A whole drag is one step.
 - **⌫** deletes the selection.
+
+### Selecting several
+
+- **shift-click** adds or removes one
+- **⌘A / ctrl-A** takes everything
+- **dragging a box** takes everything it *touches*
+
+Touches, not encloses — and the box starts on shift-drag from **anywhere**, not only
+from empty canvas. Both of those are because of the full-bleed template: it is wider
+than the canvas, so no box can ever enclose it, and it covers every pixel, so there is
+no empty space to start a box from. The obvious implementation of each would have been
+unavailable on exactly the layouts that need it most.
+
+Resize and rotate handles appear only when **one** element is selected; the rest get a
+quieter dashed outline. Those gestures act on a single element, and putting their grips
+on a group would promise a gesture that does not exist. Dragging a group moves every
+member by one shared delta, and guide snapping is off for a group — snapping one member
+would shear the group apart.
+
+A shift-press cannot know yet whether it is a click or the start of a box, so it commits
+to neither until the pointer moves 6px or is released. The threshold is generous on
+purpose: on a trackpad the finger rolls a few pixels during any click.
+
+### Moving precisely
+
+- **arrow keys** nudge; **⇧arrow** by ten
+- **hold ⌘/ctrl while dragging** slows the drag to a fifth
+
+The nudge step is one pixel **of the design document**, not of the screen. A
+screen-pixel step would mean a different physical distance on each view and different
+again at another zoom, so the same keypress would move artwork by whatever amount the
+operator happened to be zoomed to.
 
 ## Colour proofing
 
@@ -591,8 +732,15 @@ macOS Preview lists GIF frames rather than playing them, so the format meant to 
   percentages into the ink panel and they are written to the PDF verbatim.
 - **Tracing is opt-in.** Excellent on flat-colour logos, poor on photographs, so the operator
   decides rather than having artwork silently vectorised.
-- Gradients flatten to a solid colour and live text is skipped on SVG import — both are reported,
-  never silently dropped.
+- **SVG import is a subset**, and an honest one: clip paths and masks are not applied,
+  gradients flatten to a solid colour, live text and embedded bitmaps are skipped. All
+  four are reported rather than silently dropped. See the table under *What you can
+  upload* for what was silently wrong until recently, and why.
+- **Re-uploading is required after an importer fix.** What is stored is the parsed
+  result, not the source file, so a logo imported under an older parse keeps that
+  parse forever. Storing the original alongside would end this and is worth doing.
+- **The glue lap is not modelled.** `visibleStartOffsetMm` exists but is unread, so no
+  rule warns that content will be hidden beneath the seam.
 - **12oz and 16oz carry placeholder dimensions** and are blocked from export by preflight.
 - `baseAllowanceMm` is an estimate on all profiles, but is informational and drives no output.
 - The source drawing says *"for reference, final drawing after mold finished and tested"* —
@@ -601,13 +749,14 @@ macOS Preview lists GIF frames rather than playing them, so the format meant to 
 ## Verify
 
 ```bash
-npx vitest run --root packages/geometry     # 140 tests
-npx vitest run --root packages/render       # 18 tests
-npx vitest run --root packages/persistence  # 55 tests
-npx vitest run --root packages/preflight    # 48 tests
-npx vitest run --root packages/vector       # 48 tests
-npx vitest run --root packages/qr           # 62 tests, incl. real QR decoding
-npx vitest run --root apps/web              # 83 tests, incl. finding a cup in a plate
+npx vitest run --root packages/geometry     # 154 tests
+npx vitest run --root packages/render       # 23 tests
+npx vitest run --root packages/persistence  # 58 tests
+npx vitest run --root packages/preflight    # 55 tests
+npx vitest run --root packages/vector       # 97 tests
+npx vitest run --root packages/concepts     # 64 tests
+npx vitest run --root packages/qr           # 63 tests, incl. real QR decoding
+npx vitest run --root apps/web              # 116 tests, incl. finding a cup in a plate
 npx tsx packages/qr/scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg
 npx tsx packages/geometry/scripts/report-profile.ts 8oz-single-wall
 npx tsx packages/geometry/scripts/emit-fan-svg.ts 8oz-single-wall out/8oz-fan.svg
