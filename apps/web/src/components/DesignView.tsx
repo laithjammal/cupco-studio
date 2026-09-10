@@ -113,7 +113,14 @@ export default function DesignView({
             onEyedrop(c, ((e.clientX - r.left) / r.width) * c.width,
                           ((e.clientY - r.top) / r.height) * c.height);
           }}
-          style={{ cursor: eyedropActive ? 'crosshair' : cursor, touchAction: 'none' }}
+          // userSelect off: a browser treats shift-click as "extend the text
+          // selection", which fights the shift-click that extends OURS.
+          style={{
+            cursor: eyedropActive ? 'crosshair' : cursor,
+            touchAction: 'none',
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+          }}
         />
       </div>
       <div className="fanview__meta">

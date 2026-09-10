@@ -82,19 +82,37 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 const SLIVER = 0.005;
 
 /**
+ * How colourful a colour actually is.
+ *
+ * CHROMA - the plain distance between the strongest and weakest channel - and
+ * emphatically not HSL saturation, which is the trap this replaces.
+ *
+ * HSL saturation is 1.0 for EVERY colour on the line from black to a pure
+ * hue. A near-black maroon like #780b00 scores a perfect 1.00 and beats a
+ * terracotta at 0.53, even though nobody looking at the two would call the
+ * maroon the more colourful. That is how a cafe's accent came out almost
+ * black: the logo's shadow tone outscored the colour the mark is actually
+ * known by. Chroma rates the two the same, which lets coverage decide, and
+ * coverage picks the one that fills the logo.
+ */
+function chroma(rgb: RGB): number {
+  return (Math.max(rgb[0], rgb[1], rgb[2]) - Math.min(rgb[0], rgb[1], rgb[2])) / 255;
+}
+
+/**
  * How much coverage counts towards being the brand colour.
  *
- * Saturation alone is wrong: a traced logo's antialiased edge is frequently
- * the most saturated colour in the file. Raw coverage alone is also wrong: the
+ * Colourfulness alone is wrong: a traced logo's antialiased edge is often the
+ * most vivid thing in the file. Raw coverage alone is also wrong: the
  * commonest colour is usually the black outline or the white ground.
  *
- * So the two are combined, with coverage deliberately FLATTENED by a fourth
- * root. That leaves saturation as the main signal - which is what identifies a
- * brand colour - while still letting a large pale wash beat a saturated
- * sliver. A linear weighting would hand every decision to whichever colour
- * happens to fill the background.
+ * So the two are combined, with coverage deliberately FLATTENED. That keeps
+ * colourfulness as the main signal - which is what identifies a brand colour -
+ * while still letting the colour that fills a mark beat a vivid sliver. A
+ * linear weighting would hand every decision to whichever colour happens to
+ * fill the background.
  */
-const presence = (coverage: number) => Math.pow(Math.max(0, coverage), 0.25);
+const presence = (coverage: number) => Math.pow(Math.max(0, coverage), 0.35);
 
 /**
  * The colour to build a scene around.
@@ -111,7 +129,7 @@ function subjectHue(palette: readonly BrandColour[]): { h: number; s: number; rg
       const { h, s, l } = toHsl(c.rgb);
       if (l < 0.06 || l > 0.96) continue;
       if (c.coverage < floor) continue;
-      const score = s * presence(c.coverage);
+      const score = chroma(c.rgb) * presence(c.coverage);
       if (score > bestScore) { bestScore = score; best = { h, s, rgb: c.rgb }; }
     }
   };

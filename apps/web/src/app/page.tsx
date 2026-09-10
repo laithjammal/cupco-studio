@@ -703,7 +703,9 @@ export default function Page() {
           </div>
         </div>
         <div className="field">
-          <label>Layers <span className="hint" style={{ float: 'right', fontWeight: 400 }}>top = front</span></label>
+          <label>Layers <span className="hint" style={{ float: 'right', fontWeight: 400 }}>
+            {selectedIds.length > 1 ? `${selectedIds.length} selected` : 'top = front'}
+          </span></label>
           <ul className="layers">
             {[...design.elements].reverse().map((el) => (
               <li key={el.id} data-sel={selectedIds.includes(el.id)}

@@ -499,6 +499,23 @@ describe('January template', () => {
     expect(c).toBe('#e8552d');
   });
 
+  /**
+   * The reported bug: a cafe's highlights came out almost black.
+   *
+   * HSL saturation is 1.0 for every colour on the line from black to a pure
+   * hue, so the logo's dark shadow tone scored a perfect 1.00 and beat the
+   * terracotta the mark is actually known by. Nobody looking at the two would
+   * call the near-black the more colourful one.
+   */
+  it('takes the colour the mark is known by, not its darkest shadow', () => {
+    const c = tpl(jan([
+      { rgb: [174, 69, 54], coverage: 0.596 },  // #ae4536 terracotta, most of it
+      { rgb: [120, 11, 0], coverage: 0.299 },   // #780b00 near-black: hslSat 1.00
+      { rgb: [230, 166, 112], coverage: 0.104 },
+    ])).color!.toLowerCase();
+    expect(c).toBe('#ae4536');
+  });
+
   it('still finds a colour in a mark made only of fine lines', () => {
     // Every colour under the sliver floor - a line drawing. Falling back to
     // grey here would be worse than taking the most saturated of them.

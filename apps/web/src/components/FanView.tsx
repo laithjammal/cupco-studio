@@ -196,6 +196,10 @@ export default function FanView({
           style={{
             cursor: eyedropActive ? 'crosshair' : cursor,
             touchAction: 'none',
+            // A browser treats shift-click as "extend the text selection",
+            // which fights the shift-click that extends OURS.
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
             ...(displaySize
               ? { width: `${displaySize.w}px`, height: `${displaySize.h}px`, maxWidth: '100%' }
               : {}),

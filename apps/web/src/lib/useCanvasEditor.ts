@@ -18,8 +18,15 @@ import { useCallback, useRef, useState, type RefObject } from 'react';
  */
 const SNAP_PX = 90;
 
-/** Pointer travel, in screen pixels, before a press counts as a drag. */
-const DRAG_SLOP_PX = 3;
+/**
+ * Pointer travel, in screen pixels, before a press counts as a drag.
+ *
+ * Generous on purpose. A shift-click is meant to add one element to the
+ * selection, and on a trackpad the finger almost always rolls a few pixels
+ * between press and release - at a tight threshold that reads as a tiny
+ * marquee instead of a click, and the gesture quietly does the wrong thing.
+ */
+const DRAG_SLOP_PX = 6;
 import type { DesignElement, ElementId, Design } from './design';
 import { hitTest } from './design';
 import {
