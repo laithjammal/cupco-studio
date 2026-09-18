@@ -27,7 +27,7 @@ describe('the contrast guard on artwork treatment', () => {
       }],
     };
     const design = materialiseConcept(
-      layout as never, { art: art(fill) as never, name: 'mark' }, 2732, 1019,
+      layout as never, { art: art(fill) as never, name: 'mark' },
     );
     const el = design.elements.find((e) => e.type === 'vector');
     return (el as { art: { shapes: { fill: RGB }[] } }).art.shapes[0]!.fill;
