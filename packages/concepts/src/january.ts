@@ -38,6 +38,8 @@ const TEMPLATE = {
   /** The reserved disc, in IMAGE coordinates: u across, v UP. */
   logo: { u: 0.4989, v: 0.4911, diameter: 0.1617 },
   paper: '#f9f7f1',
+  /** The disc the mark sits on, sampled from the artwork. */
+  disc: '#025039',
 };
 
 /**
@@ -107,8 +109,9 @@ export const january: ConceptStrategy = {
       kind: 'artwork', u: discU, v: discV, rotation: 0,
       widthU: Math.max(0.02, Math.min(byWidth, byHeight)),
       // The disc is dark, so the mark has to read light on it - and a logo
-      // carrying its own white plate would sit in a visible box.
-      treatment: { dropPlate: true, tone: 'lighten' },
+      // carrying its own white plate would sit in a visible box. `against`
+      // names the disc so the adapter can verify that rather than assume it.
+      treatment: { dropPlate: true, tone: 'lighten', against: TEMPLATE.disc },
     });
 
     return {

@@ -52,6 +52,15 @@ export interface ArtworkTreatment {
   dropPlate?: boolean;
   /** Force the mark light or dark so it reads against the ground. */
   tone?: 'lighten' | 'darken';
+  /**
+   * What the mark will actually sit on, as hex.
+   *
+   * A tone is a guess about the ground made when the layout was written. Given
+   * the ground itself, the adapter can CHECK the guess rather than trust it,
+   * and refuse a treatment that would leave the mark unreadable - light type
+   * on a light panel, which is how a logo disappears without anything failing.
+   */
+  against?: string;
 }
 
 export interface Placement {

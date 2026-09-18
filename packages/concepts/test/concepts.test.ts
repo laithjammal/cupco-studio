@@ -609,7 +609,11 @@ describe('January template', () => {
     expect(mark(c).u).toBeCloseTo(0.4989, 2);
     expect(mark(c).v).toBeCloseTo(0.466, 2);
     // It is a dark disc, so the mark has to read light on it.
-    expect(mark(c).treatment).toEqual({ dropPlate: true, tone: 'lighten' });
+    // `against` names the disc, so the adapter can verify the tone rather
+    // than trust it - see the contrast guard in concepts-adapter.
+    expect(mark(c).treatment).toEqual({
+      dropPlate: true, tone: 'lighten', against: '#025039',
+    });
   });
 
   it('fits the mark inside the disc whatever shape it is', () => {

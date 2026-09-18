@@ -14,7 +14,7 @@ import {
   buildMotifArtwork,
   type PlacedArtwork, type RGB, type MotifId,
 } from '@cupco/vector';
-import { luminance, shade } from '@cupco/concepts';
+import { luminance, shade, contrastRatio } from '@cupco/concepts';
 import {
   generateConcepts, type ConceptInput, type ConceptLayout,
 } from '@cupco/concepts';
@@ -80,16 +80,43 @@ function treatArtwork(art: PlacedArtwork, treatment?: ArtworkTreatment): PlacedA
   let out = treatment?.dropPlate === false ? art : dropBackgroundPlate(art);
   if (!treatment) return out;
 
-  if (treatment.tone === 'lighten') {
+  const toned = treatment.tone === 'lighten'
     // Only lift shapes that are actually too dark to read; a logo that already
     // contains white or a bright accent keeps those colours intact.
-    out = recolourArtwork(out, (fill: RGB) =>
-      (luminance(fill) < 0.35 ? shade(fill, 0.78) : fill));
-  } else if (treatment.tone === 'darken') {
-    out = recolourArtwork(out, (fill: RGB) =>
-      (luminance(fill) > 0.65 ? shade(fill, -0.7) : fill));
+    ? recolourArtwork(out, (fill: RGB) => (luminance(fill) < 0.35 ? shade(fill, 0.78) : fill))
+    : treatment.tone === 'darken'
+      ? recolourArtwork(out, (fill: RGB) => (luminance(fill) > 0.65 ? shade(fill, -0.7) : fill))
+      : out;
+
+  // A tone is a guess about the ground, made when the layout was written. When
+  // the ground is actually named, check the guess instead of trusting it: the
+  // treated mark is only kept if it reads at least as well as the untreated
+  // one. Lightening a mark that turns out to sit on something pale is how a
+  // logo becomes invisible while every step reports success.
+  if (treatment.against && treatment.tone) {
+    const ground = hexToRgb(treatment.against);
+    if (ground && contrastOf(toned, ground) < contrastOf(out, ground)) return out;
   }
-  return out;
+  return toned;
+}
+
+/**
+ * How well artwork reads against a ground.
+ *
+ * Weighted by area, so the colour covering most of the mark decides. Judging
+ * on the most extreme shape would let one small white highlight vouch for a
+ * logo that is otherwise invisible.
+ */
+function contrastOf(art: PlacedArtwork, ground: RGB): number {
+  let total = 0;
+  let sum = 0;
+  for (const s of art.shapes) {
+    const a = shapeArea(s.subpaths);
+    if (a <= 0) continue;
+    total += a;
+    sum += contrastRatio(s.fill, ground) * a;
+  }
+  return total > 0 ? sum / total : 0;
 }
 
 /** Materialise one layout into a fully editable design document. */
