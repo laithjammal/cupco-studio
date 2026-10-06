@@ -14,6 +14,8 @@ declare module 'opentype.js' {
   }
   export interface Glyph {
     advanceWidth?: number;
+    /** Glyph id, which is what kerning tables are keyed on. */
+    index?: number;
     getPath(x: number, y: number, fontSize: number): Path;
   }
   export interface Font {

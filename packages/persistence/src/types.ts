@@ -106,12 +106,48 @@ export interface StoredImageElement extends StoredBase {
   naturalHeight: number;
 }
 
+/**
+ * A change made to imported artwork after it arrived, kept so it can be made
+ * again to a fresh import of the same file.
+ *
+ *   treatment - a concept's adaptation: dropping the plate, toning the mark
+ *               for its ground. The fields are the concept engine's own.
+ *   fill      - the operator recoloured the whole mark to one colour.
+ */
+export type ArtworkEdit =
+  | { kind: 'treatment'; treatment: { dropPlate?: boolean; tone?: 'lighten' | 'darken'; against?: string } }
+  | { kind: 'fill'; rgb: readonly [number, number, number] };
+
+/**
+ * Where imported vector artwork came from.
+ *
+ * Without this, a stored logo is frozen at whatever the importer made of it
+ * on the day it was uploaded - so every fix to the importer needed every logo
+ * uploaded again, by hand, to take effect. With it, a design opened after the
+ * importer improves imports the original again and replays what was done to
+ * it since.
+ */
+export interface VectorSource {
+  /** The uploaded SVG, byte for byte: an `image` asset of type image/svg+xml. */
+  assetId: AssetId;
+  /** The importer version that produced the stored artwork. */
+  importer: number;
+  /** What was done to the artwork after import, in order. */
+  edits?: ArtworkEdit[];
+}
+
 /** Vector artwork. `artId` points at a JSON PlacedArtwork asset. */
 export interface StoredVectorElement extends StoredBase {
   type: 'vector';
   artId: AssetId;
   widthU: number;
   traced: boolean;
+  /**
+   * Present for SVG uploads made since the original file was kept. Absent for
+   * traced bitmaps, generated shapes and motifs, and older uploads - all of
+   * which load their stored artwork exactly as before.
+   */
+  source?: VectorSource;
 }
 
 /**

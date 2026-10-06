@@ -155,3 +155,12 @@ describe('sweepOrphanedAssets', () => {
     expect(await storage.assets.has(shared)).toBe(true);
   });
 });
+
+describe('the original SVG behind a logo', () => {
+  it('is referenced, so a sweep cannot take away the file it re-imports from', () => {
+    const design = designWith(null, 'art');
+    const logo = design.elements.find((e) => e.type === 'vector')!;
+    if (logo.type === 'vector') logo.source = { assetId: 'svg-original', importer: 2 };
+    expect(assetIdsIn(design)).toContain('svg-original');
+  });
+});

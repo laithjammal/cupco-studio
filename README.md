@@ -8,18 +8,18 @@ engine**. There is no second, approximate mockup pipeline that could drift out o
 
 ## Status
 
-Roughly 17,600 lines of TypeScript across eight packages. **630 tests, all passing.**
+Roughly 22,700 lines of TypeScript across eight packages. **754 tests, all passing.**
 
 | Area | State | Tests |
 |---|---|---|
 | Geometry engine, 8oz profile, elevation, plates | ✅ | 154 |
-| Fan rasteriser | ✅ | 23 |
-| Vector: SVG import, strokes, tracing, palettes, CMYK | ✅ | 97 |
+| Fan rasteriser, and pictures warped onto the fan | ✅ | 28 |
+| Vector: SVG import (measured against a renderer), strokes, tracing, palettes, CMYK | ✅ | 163 |
 | QR codes: six styles, decoded by two decoders | ✅ | 63 |
 | Concept generation (10 layouts + 13 seasonal) | ✅ | 64 |
-| Persistence: assets, migration, GC, plates | ✅ | 58 |
-| Preflight: 13 production rules | ✅ | 55 |
-| App: serialisation, snapping, uploads, selection, plate fitting | ✅ | 116 |
+| Persistence: assets, migration, GC, plates | ✅ | 61 |
+| Preflight: 13 production rules | ✅ | 56 |
+| App: serialisation, re-import, fonts, uploads, selection, plate fitting | ✅ | 165 |
 | 3D cup, graduated studio backdrop, turntable MP4 | ✅ | — |
 | Photo mockups: artwork composited onto real cups | ✅ | — |
 | Drawn mockups, five settings | ✅ | — |
@@ -114,7 +114,7 @@ angle and top radius to 0.012mm. This was a real error in the profile, corrected
 
 | Format | How it arrives | Can it export as vector? |
 |---|---|---|
-| **SVG** | Parsed to real paths | **Yes — lossless.** Always prefer this. |
+| **SVG** | Parsed to real paths, checked against the original on arrival | **Yes — lossless.** Always prefer this. Pictures inside it print as CMYK images. |
 | PNG / JPG / WebP | Bitmap | Yes, after tracing (⟡ on the layer) |
 | PDF / AI | Rendered to a bitmap at ~2000px | Yes, after tracing — but lossy twice over |
 | EPS | Rejected with guidance | No — PostScript; needs Illustrator or Ghostscript |
@@ -123,41 +123,74 @@ angle and top radius to 0.012mm. This was a real error in the profile, corrected
 Tracing is **opt-in**, not automatic: it is excellent on flat-colour logos and poor on
 photographs, so the operator decides. A traced logo exports as genuine vector CMYK.
 
-### What the SVG importer handles, and what it still does not
+### The SVG importer, and how it is checked
 
-Real logos are not the tidy SVGs a parser is first written against. Everything below
-was found by a real file arriving wrong, and each one failed **silently** — the import
-looked finished, so nothing said the artwork was already damaged.
+Real logos are not the tidy SVGs a parser is first written against, and for a long
+stretch every importer bug reached the operator the same way: a logo arrived looking
+wrong, the import looked finished, and the gap was guessed at from whatever survived
+the parse. Fixing one guess at a time never ended it. So the importer was rebuilt
+around a measurement instead (`packages/vector/src/svg/`):
 
-| Feature | Handled | Why it mattered |
-|---|---|---|
-| **Internal `<style>` blocks** | ✅ | Illustrator's *default* export puts every colour in a stylesheet and references it by class. Without this every shape fell through to the inherited default and the whole logo arrived **solid black**. |
-| **`class` selectors, the cascade** | ✅ | id over class over tag, later rule breaking a tie; inline `style` beats the stylesheet, which beats a presentation attribute — as the spec says. |
-| **CDATA around the CSS** | ✅ | Drawing tools wrap it; the element scanner strips CDATA, so the CSS is pulled from the raw source *before* parsing. It has to be, because CSS may contain `>` and would derail the scanner. |
-| **Strokes** | ✅ | A stroke has no area, and everything downstream works on filled areas. Line-art logos — a monogram inside an outlined circle — arrived with **every stroked element missing**. Strokes are now outlined into fills. |
-| **`fill-rule`** | ✅ | Two subpaths wound the same way are one solid area under `nonzero` and a **hole** under `evenodd`. The rule was never read, and three places downstream each assumed one — so logos grew gaps they never had. |
-| **`<use>`** | ✅ | Its target almost always lives in `<defs>`, which is never walked, so it drew nothing and said nothing. Both `href` and `xlink:href`, `<symbol>` targets expanded, reference cycles cut. |
-| **Unquoted / valueless attributes** | ✅ | The tag pattern required `name="value"` for every attribute. One stray attribute failed the whole match and the element was dropped without a word. |
-| **Clip paths and masks** | ⚠️ reported | Not applied. Unapplied clipping makes artwork extend **further** than intended, which is the kind of surprise that reaches a printer. |
-| **Live `<text>`** | ⚠️ reported | Convert type to outlines first. |
-| **Gradients and patterns** | ⚠️ reported | Flattened to a solid colour. |
-| **Embedded `<image>`** | ⚠️ reported | Skipped. |
+- **The fidelity suite** (`packages/vector/test/fidelity`) renders every file in a
+  37-file corpus of real exporter output — Illustrator, Figma, Canva, Inkscape,
+  potrace, svgo — twice with the same renderer (resvg): once from the original, once
+  from an SVG rebuilt from nothing but what the importer produced. Any difference is,
+  by construction, something the importer lost. Every file must come out under 1%
+  different, measured against the artwork's own area so a missing logo on an empty
+  page still scores as a failure. Where resvg itself disagrees with browsers, the
+  case is held by a test checked in Chrome instead, and says so.
+- **The import check** runs the same comparison on every file actually uploaded, in
+  the browser that is open: the browser draws the original, the app draws its
+  reading of it, and both go side by side under **Selected → Import check**, with
+  the differences in red and a verdict. If they differ, **Use as image instead**
+  places the file exactly as the browser draws it — at the cost of printing as
+  pixels.
 
-Two general lessons sit behind that table, both worth keeping:
+| Feature | State |
+|---|---|
+| Stylesheets: classes, ids, attribute selectors, all four combinators, `:not`/`:is`, `!important`, `@media` | ✅ |
+| Fills, strokes (every join, cap and dash), `fill-rule`, opacity, `display`/`visibility` | ✅ outlined into fills |
+| Clip paths and masks, including luminance masks and nested clips | ✅ real boolean geometry |
+| Linear and radial gradients, patterns | ✅ as banded and tiled vector shapes |
+| Live `<text>`: tspans, positioning lists, anchoring, letter- and word-spacing, GPOS kerning | ✅ outlined from fonts |
+| `<use>`/`<symbol>`, nested `<svg>`, `<switch>`, entities, namespaced exports | ✅ |
+| Embedded pictures (`<image>` with a PNG/JPEG/WebP inside) | ✅ kept as pictures, in their place in the drawing order |
+| Embedded SVG images | ✅ imported as vector |
+| An SVG that is only a picture in a wrapper | ✅ placed as the bitmap it is, and said so |
+| Filters (drop shadows, blurs), markers, text on a path | ⚠️ reported — the import check flags the difference |
 
-- **Silence is the bug.** Every one of these was a wrong result that looked like a
-  finished import. Anything the importer cannot do now says so.
-- **What is stored is the parsed result, not the file.** So each of these fixes only
-  helps artwork uploaded *after* it — existing logos have to be re-uploaded. Keeping
-  the source file alongside the parse would end that, and is worth doing.
+**Fonts.** A file's text is set in the face it names when that face is bundled
+(Inter, Montserrat, Oswald, Bebas Neue, Playfair Display, Roboto Slab) or embedded in
+the file. Otherwise it is set in the nearest bundled face *of the same kind* -
+geometric for geometric, condensed for condensed, serif for serif — with weights chosen
+by CSS's own matching rule and italic slanted the way browsers do it, and the
+substitution is listed by name. Converting type to outlines in the original removes
+the question entirely.
+
+**The original file is kept.** Every SVG upload stores the file byte for byte next
+to its parsed artwork, with a record of what was done to it since — a recolour, a
+concept's plate removal and toning. When the importer improves (`IMPORTER_VERSION`),
+a project opened afterwards reads every logo again from its original and replays
+those edits, so fixes reach existing work without anyone uploading anything twice.
+Logos uploaded before originals were kept say so on opening, and need one last
+upload.
+
+Three lessons sit behind all of this:
+
+- **Silence is the bug.** Every importer failure was a wrong result that looked like
+  a finished import. Anything not reproduced is reported, and the check shows it.
+- **Measure, don't guess.** A renderer comparison finds the gap nobody thought to
+  test for: the suite caught radial-gradient seams, lost stroke area in a boolean
+  library, and kerning a font library silently did not read.
+- **The reference can be wrong too.** resvg disagrees with Chrome on `rebeccapurple`,
+  on `!important` against inline styles, and on letter-spacing after the last letter
+  of right-aligned text. Chrome is what a customer sees, so those are pinned by
+  Chrome measurements rather than by the suite.
 
 Stroke outlining is checked by **area**, not by eye. A stroked circle must come out as
 an annulus (`2·π·r·w`), not a filled disc — the two boundaries have to wind oppositely
-or a non-zero fill floods the middle. And a straight line's two round caps must both
-bulge *outward*: at exactly half a turn the short way round is a coin toss, and the
-first version had one cap bulging out and the other in. They cancel to exactly
-`length × width`, which looks entirely reasonable in a list of points and is visible
-only as a number.
+or a non-zero fill floods the middle — and the boolean library was chosen by the same
+test: one candidate lost 1.2% of a stroke's area, in notches.
 
 PDF and AI are **rasterised, not vector-extracted** — pdf.js renders to a canvas and does
 not expose path geometry cleanly. Reaching vector from a PDF therefore means tracing a
@@ -284,7 +317,7 @@ translation, not a state dump, and it follows one rule:
 | | |
 |---|---|
 | **Derivable** → not stored | A QR code's modules are a pure function of its URL, so only the URL is written and the code is regenerated on load. A saved code can never disagree with the generator. |
-| **Expensive or lossy to re-derive** → stored as an asset | Original image bytes, kept byte for byte, and traced vector artwork. |
+| **Expensive or lossy to re-derive** → stored as an asset | Original image bytes, kept byte for byte; traced vector artwork; and for SVG uploads both the parsed artwork and the original file, so the logo can be read again by a later importer. |
 
 Assets are addressed by the SHA-256 of their content, so a logo used in eight
 concepts, twenty versions and two duplicated projects is stored **once**. Orphaned
@@ -532,7 +565,8 @@ Two paths, chosen automatically:
 | Design contains | Export | Result |
 |---|---|---|
 | only vector artwork | **true vector CMYK** | real paths, exact ink values, ~50KB |
-| any bitmap or live text | RGB raster | 300–600dpi, several MB |
+| vector artwork with pictures inside it | **true vector CMYK** | the same, with each picture warped onto the fan from its own pixels and embedded as a CMYK image (soft-masked, 300–600dpi) between the paths it sat between |
+| any bitmap layer | RGB raster | 300–600dpi, several MB |
 
 The UI says which will run and, when it falls back, names the element responsible. Trace a bitmap
 (⟡ on its layer) to move it into the vector path.
@@ -732,13 +766,14 @@ macOS Preview lists GIF frames rather than playing them, so the format meant to 
   percentages into the ink panel and they are written to the PDF verbatim.
 - **Tracing is opt-in.** Excellent on flat-colour logos, poor on photographs, so the operator
   decides rather than having artwork silently vectorised.
-- **SVG import is a subset**, and an honest one: clip paths and masks are not applied,
-  gradients flatten to a solid colour, live text and embedded bitmaps are skipped. All
-  four are reported rather than silently dropped. See the table under *What you can
-  upload* for what was silently wrong until recently, and why.
-- **Re-uploading is required after an importer fix.** What is stored is the parsed
-  result, not the source file, so a logo imported under an older parse keeps that
-  parse forever. Storing the original alongside would end this and is worth doing.
+- **SVG filters and markers are not reproduced** — a drop shadow is dropped. They are
+  reported, the import check shows the difference, and *Use as image instead* is the
+  way out. Text on a path is reported and not drawn.
+- **Live text is only exact in the six bundled faces**, or a face embedded in the file.
+  Anything else is set in the nearest bundled face of the same kind and named as a
+  substitute. Outlined type in the original avoids it.
+- **Logos uploaded before originals were kept** cannot be re-imported; they say so when
+  their project opens, and need one more upload.
 - **The glue lap is not modelled.** `visibleStartOffsetMm` exists but is unread, so no
   rule warns that content will be hidden beneath the seam.
 - **12oz and 16oz carry placeholder dimensions** and are blocked from export by preflight.
@@ -750,13 +785,14 @@ macOS Preview lists GIF frames rather than playing them, so the format meant to 
 
 ```bash
 npx vitest run --root packages/geometry     # 154 tests
-npx vitest run --root packages/render       # 23 tests
-npx vitest run --root packages/persistence  # 58 tests
-npx vitest run --root packages/preflight    # 55 tests
-npx vitest run --root packages/vector       # 97 tests
+npx vitest run --root packages/render       # 28 tests
+npx vitest run --root packages/persistence  # 61 tests
+npx vitest run --root packages/preflight    # 56 tests
+npx vitest run --root packages/vector       # 163 tests, incl. the 37-file fidelity corpus
 npx vitest run --root packages/concepts     # 64 tests
 npx vitest run --root packages/qr           # 63 tests, incl. real QR decoding
-npx vitest run --root apps/web              # 116 tests, incl. finding a cup in a plate
+npx vitest run --root apps/web              # 165 tests, incl. finding a cup in a plate
+npx tsx packages/vector/scripts/fidelity-report.ts out/fidelity  # original | import | differences, per corpus file
 npx tsx packages/qr/scripts/qr-styles-sheet.ts cupco.com.au out/qr-styles.svg
 npx tsx packages/geometry/scripts/report-profile.ts 8oz-single-wall
 npx tsx packages/geometry/scripts/emit-fan-svg.ts 8oz-single-wall out/8oz-fan.svg

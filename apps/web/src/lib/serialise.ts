@@ -15,10 +15,13 @@
 import {
   quantiseArt, encodeJson, decodeJson, migrateDesign, SCHEMA_VERSION,
 } from '@cupco/persistence';
-import type { AssetStore, StoredArt, StoredDesign, StoredElement } from '@cupco/persistence';
+import type {
+  AssetStore, StoredArt, StoredDesign, StoredElement, VectorSource,
+} from '@cupco/persistence';
 import { buildQrArtwork, getQrStyle, normaliseUrl } from '@cupco/qr';
 import { templateFromAssetId } from './template-art';
-import type { PlacedArtwork } from '@cupco/vector';
+import { whenLoaded } from './image-load';
+import { IMPORTER_VERSION, type PlacedArtwork } from '@cupco/vector';
 import type { Design, DesignElement } from './design';
 import { reserveIds } from './design';
 
@@ -104,7 +107,10 @@ export async function serialiseDesign(
         contentType: 'application/json',
         name: el.name,
       });
-      elements.push({ ...base, type: 'vector', artId, widthU: el.widthU, traced: el.traced });
+      elements.push({
+        ...base, type: 'vector', artId, widthU: el.widthU, traced: el.traced,
+        ...(el.source ? { source: el.source } : {}),
+      });
     } else if (el.type === 'qr') {
       // Only the URL and the style. `art`, `live` and `moduleCount` are all
       // regenerated on load from those two.
@@ -139,16 +145,33 @@ export interface LoadResult {
    * know which is which.
    */
   warnings: string[];
+  /**
+   * How many logos were imported again from their original files. The stored
+   * document no longer matches what was loaded, so it should be written back.
+   */
+  reimported: number;
+}
+
+export interface DeserialiseOptions {
+  /**
+   * Import an uploaded SVG again and replay its edits. Supplied by the app,
+   * which has the fonts and the decoder this needs; without it, stored
+   * artwork is used as it is.
+   */
+  reimport?: (svg: string, source: VectorSource) => Promise<PlacedArtwork | null>;
 }
 
 /** Rebuild a runtime design from its stored form. */
 export async function deserialiseDesign(
   raw: unknown,
   assets: AssetStore,
+  options: DeserialiseOptions = {},
 ): Promise<LoadResult> {
   const stored = migrateDesign(raw);
   const elements: DesignElement[] = [];
   const warnings: string[] = [];
+  const refreshed: string[] = [];
+  const stale: string[] = [];
 
   for (const el of stored.elements) {
     const base = {
@@ -182,13 +205,40 @@ export async function deserialiseDesign(
         warnings.push(`"${el.name}" could not be decoded and was not restored`);
       }
     } else if (el.type === 'vector') {
-      const asset = await assets.get(el.artId);
-      if (!asset) {
-        warnings.push(`"${el.name}" is missing its artwork and was not restored`);
-        continue;
+      // Imported before the importer last changed: read the original again,
+      // so the logo picks up every fix without anyone uploading it twice.
+      let source = el.source;
+      let fresh: PlacedArtwork | null = null;
+      if (source && source.importer < IMPORTER_VERSION && options.reimport) {
+        const file = await assets.get(source.assetId);
+        if (file) {
+          try {
+            fresh = await options.reimport(new TextDecoder().decode(file.bytes), source);
+          } catch {
+            fresh = null;
+          }
+        }
+        if (fresh) {
+          source = { ...source, importer: IMPORTER_VERSION };
+          refreshed.push(el.name);
+        }
+      } else if (!source && !el.traced && /\.svg$/i.test(el.name)) {
+        stale.push(el.name);
       }
-      const art = decodeJson<StoredArt>(asset.bytes) as PlacedArtwork;
-      elements.push({ ...base, type: 'vector', art, widthU: el.widthU, traced: el.traced });
+
+      let art = fresh;
+      if (!art) {
+        const asset = await assets.get(el.artId);
+        if (!asset) {
+          warnings.push(`"${el.name}" is missing its artwork and was not restored`);
+          continue;
+        }
+        art = decodeJson<StoredArt>(asset.bytes) as PlacedArtwork;
+      }
+      elements.push({
+        ...base, type: 'vector', art, widthU: el.widthU, traced: el.traced,
+        ...(source ? { source } : {}),
+      });
     } else if (el.type === 'qr') {
       // Regenerated from the URL and style, by the same code that built it.
       const normalised = normaliseUrl(el.url);
@@ -211,19 +261,36 @@ export async function deserialiseDesign(
     }
   }
 
+  if (refreshed.length) {
+    warnings.push(`${list(refreshed)} ${refreshed.length === 1 ? 'was' : 'were'} imported again from the original file, with the latest SVG reader`);
+  }
+  if (stale.length) {
+    warnings.push(`${list(stale)} ${stale.length === 1 ? 'was' : 'were'} uploaded before original files were kept, so cannot pick up SVG reader fixes — upload ${stale.length === 1 ? 'it' : 'them'} once more to refresh`);
+  }
+
   // Before anything new can be created, or a fresh element will collide with a
   // loaded one.
   reserveIds(elements);
-  return { design: { background: stored.background, elements }, warnings };
+  return { design: { background: stored.background, elements }, warnings, reimported: refreshed.length };
 }
+
+/** "a", "a and b", "a, b and c" - or, past three, the first three and a count. */
+const list = (names: readonly string[]) => {
+  const q = [...new Set(names)].map((n) => `"${n}"`);
+  if (q.length > 3) return `${q.slice(0, 3).join(', ')} and ${q.length - 3} more`;
+  return q.length <= 1 ? (q[0] ?? '') : `${q.slice(0, -1).join(', ')} and ${q[q.length - 1]}`;
+};
 
 /**
  * Decode stored bytes into an image the canvas can draw.
  *
- * The object URL is revoked once `decode()` resolves. That is safe - the
- * decoded frame is retained by the element - and skipping it would leak the
+ * The object URL is revoked once the image has loaded. That is safe - the
+ * loaded image is retained by the element - and skipping it would leak the
  * full byte buffer for the lifetime of the page, which for a handful of
  * multi-megabyte uploads is quickly noticeable.
+ *
+ * Waits on `load`, not `decode()` - see image-load.ts for why the latter can
+ * leave a project half-open in a background tab.
  */
 function decodeImage(bytes: Uint8Array, contentType: string): Promise<HTMLImageElement> {
   // Copy into a fresh buffer so the Blob cannot be affected by a view onto a
@@ -232,8 +299,9 @@ function decodeImage(bytes: Uint8Array, contentType: string): Promise<HTMLImageE
   copy.set(bytes);
   const url = URL.createObjectURL(new Blob([copy], { type: contentType }));
   const image = new Image();
+  const loaded = whenLoaded(image);
   image.src = url;
-  return image.decode()
+  return loaded
     .then(() => { URL.revokeObjectURL(url); return image; })
     .catch((err: unknown) => { URL.revokeObjectURL(url); throw err; });
 }

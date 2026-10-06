@@ -16,7 +16,20 @@ import {
 import type { DesignVersionSummary, ProjectSummary, StoredDesign } from '@cupco/persistence';
 import { getStorage, storageEstimate } from './idb';
 import { deserialiseDesign, serialiseDesign } from './serialise';
+import { reimportFromSource } from './reimport';
+import { preloadRasters } from './raster-cache';
 import type { Design } from './design';
+
+/**
+ * Load a stored design for the editor: logos re-imported from their original
+ * files where the importer has moved on, and every embedded picture decoded
+ * before the design is shown, so nothing draws with a hole in it.
+ */
+async function loadForEditing(stored: unknown, assets: Parameters<typeof deserialiseDesign>[1]) {
+  const result = await deserialiseDesign(stored, assets, { reimport: reimportFromSource });
+  await preloadRasters(result.design.elements.map((el) => (el.type === 'vector' ? el.art : null)));
+  return result;
+}
 
 /** How long to wait after the last edit before writing. */
 const AUTOSAVE_MS = 800;
@@ -205,10 +218,13 @@ export function useProjects(options: UseProjectsOptions): ProjectsApi {
     const project = await storage.projects.getProject(id);
     if (!project) return;
 
-    const { design: loaded, warnings } = await deserialiseDesign(project.design, storage.assets);
+    const { design: loaded, warnings, reimported } = await loadForEditing(project.design, storage.assets);
     // Assign BEFORE handing the design to React, so no autosave can observe a
     // state where the id and the design belong to different projects.
-    syncedRef.current = loaded;
+    // A logo re-imported from its original makes the loaded design newer than
+    // the stored one, so it is left unsynced and the autosave writes it back -
+    // otherwise it would be re-imported, and announced, on every open.
+    syncedRef.current = reimported ? null : loaded;
     createdAtRef.current = project.createdAt;
     currentIdRef.current = id;
     nameRef.current = project.name;
@@ -390,7 +406,7 @@ export function useProjects(options: UseProjectsOptions): ProjectsApi {
     const version = await storage.projects.getVersion(versionId);
     if (!version) return;
 
-    const { design: loaded, warnings } = await deserialiseDesign(version.design, storage.assets);
+    const { design: loaded, warnings } = await loadForEditing(version.design, storage.assets);
     // Restoring REPLACES the working design and is itself autosaved. The
     // snapshot is untouched, so restoring the wrong one is recoverable by
     // restoring another - nothing is consumed by being restored.

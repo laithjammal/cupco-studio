@@ -16,7 +16,7 @@ import {
 import {
   renderDesignToCanvas, EMPTY_DESIGN, createImageElement, createTextElement,
   createVectorElement, FONT_CHOICES, cssFamily, nextId, withQrUrl, withQrStyle,
-  type Design, type DesignElement, type ElementId, type TextElement,
+  type Design, type DesignElement, type ElementId, type TextElement, type VectorElement,
 } from '@/lib/design';
 import { useHistory } from '@/lib/useHistory';
 import { useProjects } from '@/lib/useProjects';
@@ -43,12 +43,18 @@ import {
 } from '@/lib/vector-export';
 import {
   isSvgFile, isPdfFile, unsupportedReason,
-  loadSvgAsset, loadRasterAsset, loadPdfAsset, traceRaster,
+  loadSvgAsset, loadRasterAsset, loadPdfAsset, traceRaster, readSvgText,
 } from '@/lib/upload';
 import {
   extractPalette, simulateCmykPrint, totalInkPct, printShift, hexToRgb,
-  SHAPES, buildShapeArtwork, rgbToHex, type PaletteEntry, type ShapeId,
+  SHAPES, buildShapeArtwork, rgbToHex, IMPORTER_VERSION, type PaletteEntry, type ShapeId,
 } from '@cupco/vector';
+import {
+  importReport, verdict, pictureOfOriginal, type ImportReport as ImportReportData,
+} from '@/lib/import-check';
+import { withEdit } from '@/lib/reimport';
+import { onRasterReady } from '@/lib/raster-cache';
+import ImportReport from '@/components/ImportReport';
 import FanView from '@/components/FanView';
 import DesignView from '@/components/DesignView';
 import ConceptGallery from '@/components/ConceptGallery';
@@ -98,6 +104,13 @@ export default function Page() {
   const [proofCmyk, setProofCmyk] = useState(false);
   const [eyedrop, setEyedrop] = useState<EyedropTarget | null>(null);
   const [fontsReady, setFontsReady] = useState(false);
+  /**
+   * Bumped when a picture embedded in some artwork finishes decoding, so the
+   * canvases redraw with it. Pictures are decoded before artwork is added,
+   * so this is a safety net rather than the usual path.
+   */
+  const [rasterTick, setRasterTick] = useState(0);
+  useEffect(() => onRasterReady(() => setRasterTick((t) => t + 1)), []);
   const [brandName, setBrandName] = useState('');
   const [mockupMode, setMockupMode] = useState<'photo' | 'rendered'>('photo');
   /**
@@ -205,7 +218,7 @@ export default function Page() {
       { proofCmyk, vRange: { bottom: fanVRange.vBottom, top: fanVRange.vTop } },
     );
     setRevision((r) => r + 1);
-  }, [design, profile, proofCmyk, fontsReady, fanVRange]);
+  }, [design, profile, proofCmyk, fontsReady, fanVRange, rasterTick]);
 
   /* ---- element operations ------------------------------------------------ */
 
@@ -227,7 +240,7 @@ export default function Page() {
   const conceptSource = useMemo<ConceptSource | null>(() => {
     for (let i = design.elements.length - 1; i >= 0; i--) {
       const el = design.elements[i]!;
-      if (el.type === 'vector') return { art: el.art, name: el.name };
+      if (el.type === 'vector') return { art: el.art, name: el.name, ...(el.source ? { source: el.source } : {}) };
     }
     return null;
   }, [design.elements]);
@@ -300,16 +313,45 @@ export default function Page() {
       try {
         if (isSvgFile(file)) {
           const a = await loadSvgAsset(file);
-          if (!a.art || a.shapeCount === 0) {
-            notes.push(`${file.name}: no shapes found`);
+          const svg = a.svg!;
+          if (a.image && a.imageBytes) {
+            // A picture in an SVG wrapper: placed as the bitmap it is.
+            const assetId = await getStorage().assets
+              .put('image', a.imageBytes.bytes, { contentType: a.imageBytes.contentType, name: file.name });
+            const el = {
+              ...createImageElement(a.image, file.name, assetId), u, v,
+              ...(a.stretchV ? { stretchV: a.stretchV } : {}),
+            };
+            setDesign((d) => ({ ...d, elements: [...d.elements, el] }));
+            setSelectedId(el.id);
+            notes.push(`${file.name}: ${a.warnings[0] ?? 'placed as a picture'}`);
             continue;
           }
-          const el = { ...createVectorElement(a.art!, file.name, false), u, v };
+          if (!a.art) {
+            notes.push(`${file.name}: nothing visible to import${a.warnings.length ? ` — ${a.warnings.join(' · ')}` : ''}`);
+            continue;
+          }
+          // The original, byte for byte. It is what lets this logo be read
+          // again when the importer improves, and checked against on demand.
+          const assetId = await getStorage().assets
+            .put('image', new TextEncoder().encode(svg.text), { contentType: 'image/svg+xml', name: file.name });
+          const el = {
+            ...createVectorElement(a.art, file.name, false, { assetId, importer: IMPORTER_VERSION }),
+            u, v,
+          };
           setDesign((d) => ({ ...d, elements: [...d.elements, el] }));
           setSelectedId(el.id);
-          notes.push(`${file.name}: ${a.shapeCount} vector shapes — see the Concepts tab`);
           setTab('concepts');
-          if (a.warnings.length) notes.push(...a.warnings.map((w) => `${file.name}: ${w}`));
+          // Check it now, so the verdict is in the message rather than one
+          // more thing to go and look for.
+          const report = await importReport(assetId, async () => svg.text, readSvgText, svg);
+          const pictures = a.art.rasters?.length ?? 0;
+          notes.push(
+            `${file.name}: ${a.shapeCount} vector shapes`
+            + (pictures ? ` and ${pictures} picture${pictures === 1 ? '' : 's'}` : '')
+            + ` — ${verdict(report.check).text.replace(/^./, (c) => c.toLowerCase())}`
+            + (a.warnings.length ? ` · ${a.warnings.length} note${a.warnings.length === 1 ? '' : 's'} under Selected` : ''),
+          );
         } else {
           // PDF and AI are rendered to a bitmap first; everything else is
           // already one.
@@ -369,6 +411,40 @@ export default function Page() {
       setBusy(false);
     }
   }, [design.elements]);
+
+  /**
+   * Swap imported vector artwork for a picture of the original file.
+   *
+   * The way out when the import check says the two differ: the picture is
+   * what the browser draws, so it looks exactly like the file. It takes the
+   * vector element's place, size and rotation, and prints as pixels.
+   */
+  const placeAsImage = useCallback(async (id: ElementId, report: ImportReportData) => {
+    const el = design.elements.find((e) => e.id === id);
+    if (!el || el.type !== 'vector') return;
+    setBusy(true);
+    try {
+      const pic = await pictureOfOriginal(report.svgText, report.reading);
+      const assetId = await getStorage().assets
+        .put('image', pic.bytes, { contentType: 'image/png', name: el.name });
+      setDesign((d) => ({
+        ...d,
+        elements: d.elements.map((x) => (x.id === id && x.type === 'vector'
+          ? {
+              ...createImageElement(pic.image, x.name, assetId),
+              id: x.id, u: x.u, v: x.v, rotation: x.rotation, widthU: x.widthU,
+              ...(x.opacity !== undefined ? { opacity: x.opacity } : {}),
+              ...(x.stretchV !== undefined ? { stretchV: x.stretchV } : {}),
+            }
+          : x)),
+      }));
+      setStatus(`${el.name} placed as an image — it matches the file exactly, and prints as pixels`);
+    } catch (e) {
+      setStatus(`Could not place ${el.name} as an image: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [design.elements, setDesign]);
 
   const removeElement = useCallback((id: ElementId) => {
     setDesign((d) => ({ ...d, elements: d.elements.filter((e) => e.id !== id) }));
@@ -576,13 +652,13 @@ export default function Page() {
           const r = await exportFanPdfVector(design, profile, geom, inks, undefined, setStatus);
           download(r.blob, `cupco-${profile.sizeOz}oz-fan-vector-cmyk.pdf`);
           setStatus(
-            `Exported vector CMYK PDF · ${r.pathCount} paths, ${r.pointCount.toLocaleString()} points · ` +
+            `Exported vector CMYK PDF · ${r.pathCount} paths${r.pictureCount ? `, ${r.pictureCount} CMYK picture${r.pictureCount === 1 ? '' : 's'}` : ''}, ${r.pointCount.toLocaleString()} points · ` +
             `${r.widthMm.toFixed(1)}×${r.heightMm.toFixed(1)}mm · ${(r.blob.size / 1024).toFixed(0)}KB · ${r.ms}ms`,
           );
         } else {
-          const r = exportFanSvgVector(design, profile, geom, inks);
+          const r = await exportFanSvgVector(design, profile, geom, inks);
           download(r.blob, `cupco-${profile.sizeOz}oz-fan-vector.svg`);
-          setStatus(`Exported vector SVG · ${r.pathCount} paths, ${r.pointCount.toLocaleString()} points · ${(r.blob.size / 1024).toFixed(0)}KB`);
+          setStatus(`Exported vector SVG · ${r.pathCount} paths${r.pictureCount ? `, ${r.pictureCount} picture${r.pictureCount === 1 ? '' : 's'}` : ''}, ${r.pointCount.toLocaleString()} points · ${(r.blob.size / 1024).toFixed(0)}KB`);
         }
         return;
       }
@@ -779,6 +855,10 @@ export default function Page() {
             ) : (
               <BlockControls el={selected} onPatch={(p) => commitElement(selected.id, p)} />
             )}
+            {selected.type === 'vector' && selected.source && (
+              <ImportReport el={selected} busy={busy}
+                onUseAsImage={(r) => placeAsImage(selected.id, r)} />
+            )}
             <label className="txt__lbl" style={{ marginTop: 10 }}>Fill template</label>
             <div className="btnrow">
               <button onClick={() => onFill('bleed-h')} title="Run off the left and right edges, out to the bleed. Height and vertical position are left alone.">
@@ -852,6 +932,15 @@ export default function Page() {
             <strong>{vectorCheck.eligible ? 'Vector CMYK ready' : 'Will export as RGB raster'}</strong>
             {vectorCheck.eligible
               ? 'Exports as real paths with exact ink values.'
+                + (vectorCheck.pictures.length
+                  ? (vectorCheck.pictures.reduce((n, p) => n + p.count, 0) === 1
+                    ? ' The picture inside '
+                    : ' The pictures inside ')
+                    + vectorCheck.pictures.map((p) => p.name).join(', ')
+                    + (vectorCheck.pictures.reduce((n, p) => n + p.count, 0) === 1
+                      ? ' goes in as a CMYK image, at up to 600dpi.'
+                      : ' go in as CMYK images, at up to 600dpi.')
+                  : '')
               : vectorCheck.blockers.map((b) => `${b.name}: ${b.reason}`).join(' · ')}
           </div>
           {showInks && (
@@ -1085,7 +1174,12 @@ function BlockControls({
               ...el.art,
               shapes: el.art.shapes.map((sh) => ({ ...sh, fill: hexToRgb(e.target.value) })),
             },
-          } as Partial<DesignElement>)} />
+            // Recorded on the source too, so a re-import of the original
+            // comes back in the colour chosen here rather than the file's.
+            ...(el.source
+              ? { source: withEdit(el.source, { kind: 'fill', rgb: hexToRgb(e.target.value) }) }
+              : {}),
+          } as Partial<VectorElement> as Partial<DesignElement>)} />
         <div className="hint">
           {(el.widthU * 100).toFixed(0)}% of circumference · {el.rotation}° ·
           exports as a vector path

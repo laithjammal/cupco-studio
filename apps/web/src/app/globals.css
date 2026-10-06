@@ -364,3 +364,15 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   border: 1px solid var(--line); border-radius: 10px; background: #fff;
 }
 .plates__viewport .plates__canvas { border: none; border-radius: 0; max-width: none; }
+
+/* Import check: the original beside the import, for every uploaded SVG. */
+.import { margin-top: var(--s3); }
+.import__pics { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); margin: var(--s2) 0; }
+.import__pics figure { margin: 0; }
+.import__pics img {
+  display: block; width: 100%; height: auto; border-radius: 4px;
+  border: 1px solid var(--line); background: #808080;
+}
+.import__pics figcaption { font-size: 10.5px; color: var(--muted); margin-top: 2px; text-align: center; }
+.import__notes { margin: var(--s2) 0 0; padding-left: 18px; font-size: 12px; color: var(--ink); }
+.import__notes li { margin-bottom: 3px; }

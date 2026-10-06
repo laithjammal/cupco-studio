@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createMemoryStorage, assetIdsIn, SCHEMA_VERSION } from '@cupco/persistence';
-import type { PlacedArtwork } from '@cupco/vector';
+import type { VectorSource } from '@cupco/persistence';
+import { IMPORTER_VERSION, type PlacedArtwork } from '@cupco/vector';
+import { replayEdits, withEdit } from '@/lib/reimport';
 import { serialiseDesign, deserialiseDesign } from '@/lib/serialise';
 import {
   createBandElement, createTextElement, createQrElement, createVectorElement, nextId,
@@ -25,22 +27,30 @@ beforeAll(() => {
   });
   g['Image'] = class {
     naturalWidth = 0; naturalHeight = 0;
+    complete = true;
     #src = '';
+    #listeners: Record<string, (() => void)[]> = {};
     set src(value: string) {
       this.#src = value;
+      this.complete = false;
       // Encode dimensions in the stored bytes so the test can prove the RIGHT
-      // asset came back, not merely that something did.
+      // asset came back, not merely that something did. Loading is
+      // asynchronous, then fires load or error, as a browser's does.
       const blob = blobs.get(value);
-      if (blob) void blob.arrayBuffer().then((b) => decoded.push(new Uint8Array(b)));
+      void (async () => {
+        if (blob) {
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          decoded.push(bytes);
+          this.naturalWidth = bytes[0] ?? 0;
+          this.naturalHeight = bytes[1] ?? 0;
+        }
+        this.complete = true;
+        for (const fn of this.#listeners[blob ? 'load' : 'error'] ?? []) fn();
+      })();
     }
     get src() { return this.#src; }
-    async decode() {
-      const blob = blobs.get(this.#src);
-      if (!blob) throw new Error('no such object URL');
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      this.naturalWidth = bytes[0] ?? 0;
-      this.naturalHeight = bytes[1] ?? 0;
-    }
+    getAttribute(name: string) { return name === 'src' && this.#src ? this.#src : null; }
+    addEventListener(type: string, fn: () => void) { (this.#listeners[type] ??= []).push(fn); }
   };
 });
 
@@ -315,5 +325,101 @@ describe('id reservation', () => {
     const fresh = createTextElement('new');
     expect(design.elements.some((e) => e.id === fresh.id)).toBe(false);
     expect(Number(fresh.id.slice(3))).toBeGreaterThan(9000);
+  });
+});
+
+describe('logos keep their original file, and re-import from it', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>';
+
+  async function storedLogo(importer: number, edits?: VectorSource['edits']) {
+    const { assets } = createMemoryStorage();
+    const assetId = await assets.put('image', new TextEncoder().encode(svg), { contentType: 'image/svg+xml' });
+    const source: VectorSource = { assetId, importer, ...(edits ? { edits } : {}) };
+    const el = createVectorElement(art(1), 'logo.svg', false, source);
+    const stored = await serialiseDesign({ background: '#fff', elements: [el] }, assets);
+    return { assets, stored: JSON.parse(JSON.stringify(stored)) as typeof stored, source };
+  }
+
+  const freshArt: PlacedArtwork = { aspect: 2, shapes: [{ fill: [1, 2, 3], opacity: 1, subpaths: [[{ x: 0, y: 0 }, { x: 1, y: 1 }]] }] };
+
+  it('stores where the artwork came from', async () => {
+    const { stored, source } = await storedLogo(IMPORTER_VERSION);
+    expect(stored.elements[0]).toMatchObject({ type: 'vector', source });
+  });
+
+  it('imports again when the importer has moved on, and says so', async () => {
+    const { assets, stored } = await storedLogo(IMPORTER_VERSION - 1, [{ kind: 'fill', rgb: [9, 9, 9] }]);
+    const seen: { text: string; source: VectorSource }[] = [];
+    const { design, warnings } = await deserialiseDesign(stored, assets, {
+      reimport: async (text, source) => { seen.push({ text, source }); return freshArt; },
+    });
+    // The original bytes, and the edits to replay, reach the importer.
+    expect(seen[0]!.text).toBe(svg);
+    expect(seen[0]!.source.edits).toEqual([{ kind: 'fill', rgb: [9, 9, 9] }]);
+    const el = design.elements[0]!;
+    if (el.type !== 'vector') throw new Error('expected vector');
+    expect(el.art).toEqual(freshArt);
+    // Marked current, so the next save records the new artwork as up to date.
+    expect(el.source?.importer).toBe(IMPORTER_VERSION);
+    expect(warnings.join(' ')).toMatch(/"logo.svg" was imported again from the original file/);
+  });
+
+  it('leaves current artwork alone', async () => {
+    const { assets, stored } = await storedLogo(IMPORTER_VERSION);
+    let calls = 0;
+    const { design, warnings } = await deserialiseDesign(stored, assets, {
+      reimport: async () => { calls++; return freshArt; },
+    });
+    expect(calls).toBe(0);
+    expect(warnings).toEqual([]);
+    const el = design.elements[0]!;
+    expect(el.type === 'vector' && el.art.aspect).toBe(1);
+  });
+
+  it('falls back to the stored artwork if re-importing fails', async () => {
+    const { assets, stored } = await storedLogo(IMPORTER_VERSION - 1);
+    const { design } = await deserialiseDesign(stored, assets, {
+      reimport: async () => { throw new Error('boom'); },
+    });
+    const el = design.elements[0]!;
+    if (el.type !== 'vector') throw new Error('expected vector');
+    expect(el.art.aspect).toBe(1);
+    // Still marked old, so it is tried again next time.
+    expect(el.source?.importer).toBe(IMPORTER_VERSION - 1);
+  });
+
+  it('tells the operator which older uploads need one more upload', async () => {
+    const { assets } = createMemoryStorage();
+    const old = createVectorElement(art(1), 'brand.svg', false);
+    const shape = createVectorElement(art(1), 'Circle', false);
+    const stored = await serialiseDesign({ background: '#fff', elements: [old, shape] }, assets);
+    const { warnings } = await deserialiseDesign(stored, assets, { reimport: async () => freshArt });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/^"brand.svg" was uploaded before original files were kept/);
+  });
+});
+
+describe('replaying edits onto a fresh import', () => {
+  const two: PlacedArtwork = {
+    aspect: 1,
+    shapes: [
+      { fill: [0, 0, 0], opacity: 1, subpaths: [[{ x: 0.2, y: 0.2 }, { x: 0.8, y: 0.2 }, { x: 0.8, y: 0.8 }]] },
+      { fill: [200, 0, 0], opacity: 1, subpaths: [[{ x: 0.3, y: 0.3 }, { x: 0.7, y: 0.3 }, { x: 0.7, y: 0.7 }]] },
+    ],
+  };
+
+  it('recolours every shape the way the operator did', () => {
+    const out = replayEdits(two, [{ kind: 'fill', rgb: [1, 2, 3] }]);
+    expect(out.shapes.map((s) => s.fill)).toEqual([[1, 2, 3], [1, 2, 3]]);
+  });
+
+  it('collapses a drag through the colour picker into one edit', () => {
+    let src: VectorSource = { assetId: 'a', importer: IMPORTER_VERSION };
+    src = withEdit(src, { kind: 'treatment', treatment: { tone: 'lighten' } });
+    for (let i = 0; i < 50; i++) src = withEdit(src, { kind: 'fill', rgb: [i, i, i] });
+    expect(src.edits).toEqual([
+      { kind: 'treatment', treatment: { tone: 'lighten' } },
+      { kind: 'fill', rgb: [49, 49, 49] },
+    ]);
   });
 });

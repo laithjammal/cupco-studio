@@ -14,7 +14,11 @@ export function assetIdsIn(design: StoredDesign): AssetId[] {
   const ids: AssetId[] = [];
   for (const el of design.elements) {
     if (el.type === 'image') ids.push(el.assetId);
-    else if (el.type === 'vector') ids.push(el.artId);
+    else if (el.type === 'vector') {
+      ids.push(el.artId);
+      // The original file: collect it and the logo can never be re-imported.
+      if (el.source) ids.push(el.source.assetId);
+    }
   }
   return ids;
 }

@@ -255,6 +255,18 @@ describe('raster resolution', () => {
   it('ignores vector artwork, which has no resolution', () => {
     expect(rules([el({ kind: 'vector', widthU: 0.9 })], 'raster-resolution')).toEqual([]);
   });
+
+  it('checks a photo INSIDE vector artwork, and says that is what it means', () => {
+    const logo = el({
+      kind: 'vector', name: 'badge.svg', v: 0.5, widthU: ONE_INCH_U,
+      image: { naturalWidth: 100, naturalHeight: 100, embedded: true },
+    });
+    const issues = rules([logo], 'raster-resolution');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.message).toMatch(/^The image inside "badge.svg"/);
+    // The remedy cannot be "supply it at N px": the operator has no such file.
+    expect(issues[0]!.remedy).not.toMatch(/px wide/);
+  });
 });
 
 describe('ink limit', () => {

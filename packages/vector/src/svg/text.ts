@@ -49,10 +49,22 @@ export interface OutlineFont {
 
 export interface FontMatch {
   font: OutlineFont;
-  /** The family actually used. */
+  /** The face actually used, named for the operator: "Inter Bold". */
   family: string;
   /** False when a substitute stood in for what the file asked for. */
   exact: boolean;
+  /**
+   * A synthetic slant, as the tangent of its angle, for italic asked of a
+   * family with only upright faces. Browsers do the same - CSS's default
+   * oblique is 14 degrees - so an italic tagline still leans the way it does
+   * on screen.
+   */
+  skewX?: number;
+  /**
+   * The resolver's own name for the face, carried into FontUse untouched -
+   * so whoever supplied the fonts can tell afterwards which file set what.
+   */
+  key?: string;
 }
 
 export interface TextRun { subpaths: SubPath[]; style: Style }
@@ -203,7 +215,11 @@ export function layoutText(textEl: XElement, textStyle: Style, env: TextEnv): Te
     }
   }
 
-  interface Placed { c: Char; match: FontMatch; x: number; y: number; adv: number; glyph: OutlineGlyph; chunk: number }
+  /**
+   * `step` is how far the pen actually moved past the glyph: its advance,
+   * kerning, and letter- and word-spacing. It is what anchoring measures.
+   */
+  interface Placed { c: Char; match: FontMatch; x: number; y: number; adv: number; step: number; glyph: OutlineGlyph; chunk: number }
   const placed: Placed[] = [];
   let penX = 0, penY = 0, chunk = 0, missing = false;
   for (let i = 0; i < chars.length; i++) {
@@ -218,7 +234,8 @@ export function layoutText(textEl: XElement, textStyle: Style, env: TextEnv): Te
     const k = c.style.fontSize / (match.font.unitsPerEm || 1000);
     const glyph = match.font.charToGlyph(c.ch);
     const adv = (glyph.advanceWidth ?? 0) * k;
-    placed.push({ c, match, x: penX, y: penY, adv, glyph, chunk });
+    const here: Placed = { c, match, x: penX, y: penY, adv, step: adv, glyph, chunk };
+    placed.push(here);
     let kern = 0;
     const next = chars[i + 1];
     if (next && next.x === undefined && next.style.fontSize === c.style.fontSize) {
@@ -232,7 +249,8 @@ export function layoutText(textEl: XElement, textStyle: Style, env: TextEnv): Te
         }
       }
     }
-    penX += adv + kern + c.style.letterSpacing + (c.ch === ' ' ? c.style.wordSpacing : 0);
+    here.step = adv + kern + c.style.letterSpacing + (c.ch === ' ' ? c.style.wordSpacing : 0);
+    penX += here.step;
   }
   if (missing) env.warn('some text could not be drawn: no font was available for it');
 
@@ -247,7 +265,12 @@ export function layoutText(textEl: XElement, textStyle: Style, env: TextEnv): Te
     const anchor = list[0]!.c.style.textAnchor;
     if (anchor === 'start') continue;
     const first = list[0]!, last = list[list.length - 1]!;
-    const width = last.x + last.adv - first.x;
+    // The whole advance, letter-spacing after the LAST letter included.
+    // That is how Chrome and Illustrator both measure tracked text - checked
+    // in Chrome: right-aligned "END" tracked by 2 ends its last glyph 2 short
+    // of the anchor. resvg leaves the trailing space out, so the fidelity
+    // corpus cannot see this one; a browser-verified test holds it instead.
+    const width = last.x + last.step - first.x;
     const shift = anchor === 'middle' ? -width / 2 : -width;
     for (const p of list) p.x += shift;
   }
@@ -258,6 +281,11 @@ export function layoutText(textEl: XElement, textStyle: Style, env: TextEnv): Te
     const size = p.c.style.fontSize;
     const y = p.y + baselineShift(p.match.font, size, p.c.style.dominantBaseline);
     let subs = outline(p.glyph.getPath(p.x, y, size).commands, env.tolerance);
+    const skew = p.match.skewX;
+    if (skew) {
+      // About the baseline, leaning forward: y points down, so higher is less.
+      subs = subs.map((sp) => ({ closed: sp.closed, points: sp.points.map((q) => ({ x: q.x + (y - q.y) * skew, y: q.y })) }));
+    }
     if (p.c.rotate) {
       const a = (p.c.rotate * Math.PI) / 180, co = Math.cos(a), si = Math.sin(a);
       subs = subs.map((sp) => ({

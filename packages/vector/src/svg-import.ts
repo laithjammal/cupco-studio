@@ -9,6 +9,7 @@
 
 export {
   importSvg,
+  describeFace,
   IMPORTER_VERSION,
   parseCssColour,
   type FillRule,

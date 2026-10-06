@@ -59,7 +59,13 @@ export interface PreflightElement {
   /** Every ink this element lays down, for the coverage check. */
   inks: readonly CMYK[];
 
-  image?: { naturalWidth: number; naturalHeight: number };
+  /**
+   * Pixel dimensions, for the resolution check. For vector artwork that
+   * carries a bitmap inside it, `embedded` is set and the size is the
+   * lowest-resolution image's, scaled to what it would be across the whole
+   * element - so the same arithmetic gives that image's real printed dpi.
+   */
+  image?: { naturalWidth: number; naturalHeight: number; embedded?: boolean };
   text?: { content: string; sizeV: number };
   qr?: { url: string; live: boolean; moduleCount: number };
 }

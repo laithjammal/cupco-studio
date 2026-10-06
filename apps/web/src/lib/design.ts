@@ -12,8 +12,10 @@ import type { PlacedArtwork } from '@cupco/vector';
 import {
   rgbToCmyk, simulateCmykPrint, hexToRgb, rgbToHex,
 } from '@cupco/vector';
+import type { VectorSource } from '@cupco/persistence';
 import { buildQrArtwork, normaliseUrl, getQrStyle } from '@cupco/qr';
 import { cssFamily, getLoadedFont, layoutText, resolveWeight } from './fonts';
+import { drawArtwork } from './artwork-draw';
 
 export type ElementId = string;
 
@@ -92,6 +94,12 @@ export interface VectorElement extends ElementBase {
   widthU: number;
   /** True when produced by tracing a raster upload rather than an SVG. */
   traced: boolean;
+  /**
+   * The uploaded SVG this came from, and what has been done to it since.
+   * Present for SVG uploads, so the artwork can be imported again when the
+   * importer improves - and checked against the original on demand.
+   */
+  source?: VectorSource;
 }
 
 /**
@@ -230,11 +238,17 @@ export function createBandElement(color = '#0f172a', v = 0.25, heightV = 0.22): 
   };
 }
 
-export function createVectorElement(art: PlacedArtwork, name: string, traced: boolean): VectorElement {
+export function createVectorElement(
+  art: PlacedArtwork,
+  name: string,
+  traced: boolean,
+  source?: VectorSource,
+): VectorElement {
   return {
     id: nextId(), type: 'vector', name,
     u: 0.5, v: 0.55, rotation: 0,
     widthU: 0.25, art, traced,
+    ...(source ? { source } : {}),
   };
 }
 
@@ -568,24 +582,9 @@ export function renderDesign(
         // is drawn here and what is printed come from one source.
         const w = el.widthU * width;
         const h = w * el.art.aspect * stretchOf(el);
-        for (const shape of el.art.shapes) {
-          ctx.globalAlpha = (el.opacity ?? 1) * shape.opacity;
-          const c = options.proofCmyk ? simulateCmykPrint(rgbToCmyk(shape.fill)) : shape.fill;
-          ctx.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
-          ctx.beginPath();
-          for (const sp of shape.subpaths) {
-            sp.forEach((pt, i) => {
-              const x = (pt.x - 0.5) * w;
-              const y = (pt.y - 0.5) * h;
-              if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-            });
-            ctx.closePath();
-          }
-          // The shape's OWN rule. Imported artwork states it; generated
-          // artwork leaves it unset and means even-odd. Assuming one rule for
-          // both punched holes through logos that had none.
-          ctx.fill(shape.fillRule ?? 'evenodd');
-        }
+        drawArtwork(ctx, el.art, [w, 0, 0, h, -w / 2, -h / 2], {
+          opacity: el.opacity ?? 1, proofCmyk: options.proofCmyk,
+        });
       } else if (el.content.trim() !== '') {
         const sizePx = Math.max(4, el.sizeV * pxPerV);
         ctx.fillStyle = paint(el.color);

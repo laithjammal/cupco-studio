@@ -6,3 +6,4 @@ export * from './stroke';
 export * from './transform';
 export * from './shapes';
 export * from './motifs';
+export * from './fidelity';

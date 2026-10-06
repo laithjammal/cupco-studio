@@ -67,4 +67,19 @@ describe('browser-verified cases resvg gets wrong', () => {
       + '<rect class="imp" width="10" height="10" style="fill:#0000ff"/>');
     expect(s.fill).toEqual([0, 170, 0]);
   });
+
+  it('anchors tracked text on its whole advance, last letter-space included', () => {
+    // Measured in Chrome with getStartPositionOfChar: Inter Bold 28px "END",
+    // letter-spacing 2, text-anchor end at x=290, starts at x=225.43 - the
+    // three advances (58.57) plus three spaces, not two.
+    const r = importSvg('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 120">'
+      + '<text x="290" y="80" text-anchor="end" font-family="Inter" font-weight="700" font-size="28" letter-spacing="2">END</text></svg>',
+    { fonts: testFonts });
+    const xs = r.shapes.flatMap((s) => s.subpaths.flatMap((sp) => sp.points.map((p) => p.x)));
+    // E's stem starts at its left side bearing; Inter Bold's is ~1.9px at 28px.
+    expect(Math.min(...xs)).toBeGreaterThan(225.43);
+    expect(Math.min(...xs)).toBeLessThan(225.43 + 3);
+    // And the D's right edge stops short of the anchor by the trailing space.
+    expect(Math.max(...xs)).toBeLessThan(288.5);
+  });
 });

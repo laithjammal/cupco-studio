@@ -74,7 +74,11 @@ describe('the January template', () => {
     expect(id).toBe('template:january-2027:#e8552d');
     // A design saved with a template reloads by rebuilding from this id
     // rather than by storing a 1.6MB PNG per project.
-    expect(templateFromAssetId(id)).not.toBeNull();
+    const rebuilt = templateFromAssetId(id);
+    expect(rebuilt).not.toBeNull();
+    // The rebuild itself needs a browser to decode in; here only the routing
+    // is under test, so its inevitable failure in Node is caught, not leaked.
+    rebuilt?.catch(() => undefined);
     expect(templateFromAssetId('asset:1234')).toBeNull();
   });
 });

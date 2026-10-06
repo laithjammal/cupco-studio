@@ -62,7 +62,17 @@ export interface ImportedRaster {
   before: number;
 }
 
-export interface FontUse { requested: string; used: string; exact: boolean }
+export interface FontUse {
+  /** The face the file asked for, named the way a designer would: "Montserrat Bold". */
+  requested: string;
+  /** The face that set it. */
+  used: string;
+  exact: boolean;
+  /** The CSS family exactly as the file wrote it. */
+  family: string;
+  /** The resolver's key for the face used (FontMatch.key), if it gave one. */
+  face?: string;
+}
 
 export interface SvgImportResult {
   shapes: ImportedShape[];
@@ -73,6 +83,12 @@ export interface SvgImportResult {
   /** Human-readable notes about anything not reproduced exactly. */
   warnings: string[];
   fonts: FontUse[];
+  /**
+   * How a browser sizes this file as an image: its intrinsic box in CSS px,
+   * and the matrix from document units into it. What lets a rendering of the
+   * original be laid exactly over a rendering of this result.
+   */
+  viewport: { width: number; height: number; matrix: Mat };
 }
 
 export interface FontResolver {
@@ -88,7 +104,7 @@ export interface SvgImportOptions {
 }
 
 /** Bumped whenever the importer's output for some file changes. Saved logos re-import when it does. */
-export const IMPORTER_VERSION = 2;
+export const IMPORTER_VERSION = 3;
 
 /* -------------------------------------------------------------------------- */
 
@@ -121,6 +137,17 @@ const closed = (rings: Ring[]): SubPath[] => rings.map((points) => ({ points, cl
 const boxesMeet = (a: Box | null, b: Box | null) =>
   !!a && !!b && a.x0 <= b.x1 && b.x0 <= a.x1 && a.y0 <= b.y1 && b.y0 <= a.y1;
 
+const WEIGHT_NAMES: Record<number, string> = {
+  100: 'Thin', 200: 'ExtraLight', 300: 'Light', 400: '', 500: 'Medium',
+  600: 'SemiBold', 700: 'Bold', 800: 'ExtraBold', 900: 'Black',
+};
+
+/** "Montserrat SemiBold Italic" - a face named the way a designer would name it. */
+export function describeFace(family: string, weight: number, italic: boolean): string {
+  const w = WEIGHT_NAMES[Math.min(900, Math.max(100, Math.round(weight / 100) * 100))] ?? '';
+  return [family, w, italic ? 'Italic' : ''].filter(Boolean).join(' ');
+}
+
 class Importer {
   private root: XElement | null;
   private sheet: Stylesheet = { rules: [], fontFaces: [], skipped: 0 };
@@ -137,6 +164,7 @@ class Importer {
   private result: Sink = { shapes: [], rasters: [] };
   private width = 0;
   private height = 0;
+  private intrinsic: SvgImportResult['viewport'] = { width: 300, height: 150, matrix: IDENTITY };
 
   constructor(src: string, private opts: SvgImportOptions, private nesting = 0) {
     this.root = parseXml(src);
@@ -146,7 +174,12 @@ class Importer {
 
   run(): SvgImportResult {
     const root = this.root;
-    if (!root) return { shapes: [], rasters: [], width: 0, height: 0, warnings: ['Not a valid SVG document'], fonts: [] };
+    if (!root) {
+      return {
+        shapes: [], rasters: [], width: 0, height: 0, warnings: ['Not a valid SVG document'], fonts: [],
+        viewport: { width: 300, height: 150, matrix: IDENTITY },
+      };
+    }
 
     // Style sheets, from every <style> in the document, in document order.
     const walkAll = (el: XElement) => {
@@ -166,13 +199,26 @@ class Importer {
     const w = length(root.attrs['width'], { percentOf: vb?.w ?? NaN, fontSize: 16 }, NaN);
     const h = length(root.attrs['height'], { percentOf: vb?.h ?? NaN, fontSize: 16 }, NaN);
     let base: Mat = IDENTITY;
+    // A browser's intrinsic size for the file: both dimensions if given, one
+    // and the viewBox's proportions, or the replaced-element default.
+    const par = aspectRatio(root.attrs['preserveaspectratio']);
+    if (vb && w > 0 && h > 0) {
+      this.intrinsic = { width: w, height: h, matrix: mul(viewBoxTransform(vb, par, w, h), translate(vb.x, vb.y)) };
+    } else if (vb && (w > 0 || h > 0)) {
+      const vw = w > 0 ? w : (h * vb.w) / vb.h, vh = h > 0 ? h : (w * vb.h) / vb.w;
+      this.intrinsic = { width: vw, height: vh, matrix: mul(viewBoxTransform(vb, par, vw, vh), translate(vb.x, vb.y)) };
+    } else if (vb) {
+      this.intrinsic = { width: vb.w, height: vb.h, matrix: IDENTITY };
+    } else if (w > 0 && h > 0) {
+      this.intrinsic = { width: w, height: h, matrix: IDENTITY };
+    }
     if (vb) {
       this.width = vb.w; this.height = vb.h;
       base = translate(-vb.x, -vb.y);
       this.rootBox = { x0: 0, y0: 0, x1: vb.w, y1: vb.h };
       if (w > 0 && h > 0) {
         // Letterboxing from preserveAspectRatio widens what is visible.
-        const vbt = viewBoxTransform(vb, aspectRatio(root.attrs['preserveaspectratio']), w, h);
+        const vbt = viewBoxTransform(vb, par, w, h);
         const inv = invert(vbt);
         if (inv) {
           const a = apply(inv, { x: 0, y: 0 }), b = apply(inv, { x: w, y: h });
@@ -218,6 +264,7 @@ class Importer {
       height: this.height || 1,
       warnings: [...this.warnings],
       fonts: [...this.fontUses.values()],
+      viewport: this.intrinsic,
     };
   }
 
@@ -870,7 +917,7 @@ class Importer {
         this.embedded.set(key, parsed);
       }
       const font = this.embedded.get(key);
-      if (font) return this.record(families[0] ?? fam, { font, family: fam, exact: true });
+      if (font) return this.record(fam, fam, { font, family: fam, exact: true }, false);
     }
     if (!this.opts.fonts) {
       this.warn('live text was not drawn: no fonts are available to outline it');
@@ -879,33 +926,44 @@ class Importer {
     // Illustrator writes PostScript names - "Montserrat-Bold" - so also try the
     // family with its style suffix stripped, carrying the weight it named.
     let weight = style.fontWeight;
+    let slanted = italic;
+    let named = families[0] ?? '';
     const candidates: string[] = [];
     for (const fam of families) {
       candidates.push(fam);
-      const m = /^(.+?)[-\s]?(Thin|ExtraLight|UltraLight|Light|Regular|Book|Roman|Medium|SemiBold|DemiBold|Bold|ExtraBold|UltraBold|Black|Heavy)(Italic|It|Oblique)?$/i.exec(fam);
-      if (m && m[1]) {
+      // A separator is required before the style, so a family that merely
+      // ends in one - "Facebook", "Brandit" - is left alone.
+      const m = /^(.+?)[-\s]+(Thin|ExtraLight|UltraLight|Light|Regular|Book|Roman|Medium|SemiBold|DemiBold|Bold|ExtraBold|UltraBold|Black|Heavy)?(Italic|It|Oblique)?$/i.exec(fam);
+      if (m && m[1] && (m[2] || m[3])) {
         candidates.push(m[1]);
+        if (fam === families[0]) named = m[1];
         const wmap: Record<string, number> = {
           thin: 100, extralight: 200, ultralight: 200, light: 300, regular: 400, book: 400, roman: 400,
           medium: 500, semibold: 600, demibold: 600, bold: 700, extrabold: 800, ultrabold: 800, black: 900, heavy: 900,
         };
-        if (style.fontWeight === 400 && wmap[m[2]!.toLowerCase()]) weight = wmap[m[2]!.toLowerCase()]!;
+        if (m[2] && style.fontWeight === 400 && wmap[m[2].toLowerCase()]) weight = wmap[m[2].toLowerCase()]!;
+        if (m[3]) slanted = true;
       }
     }
-    const match = this.opts.fonts.resolve(candidates, weight, italic);
+    const match = this.opts.fonts.resolve(candidates, weight, slanted);
     if (!match) {
       this.warn('some text could not be drawn: no font was available for it');
       return null;
     }
-    return this.record(families[0] ?? match.family, match);
+    const generic = /^(sans-serif|serif|monospace|cursive|fantasy|system-ui)$/i.test(families[0] ?? '');
+    return this.record(describeFace(named || match.family, weight, slanted), families[0] ?? '', match, generic);
   }
 
-  private record(requested: string, match: FontMatch): FontMatch {
+  /**
+   * Note which face stood in for which request, once each, and warn when it
+   * was a substitute. A generic family ("sans-serif") named no particular
+   * face, so whatever answers it is not a substitution.
+   */
+  private record(requested: string, family: string, match: FontMatch, generic: boolean): FontMatch {
     const key = `${requested}\u0000${match.family}`;
     if (!this.fontUses.has(key)) {
-      const generic = /^(sans-serif|serif|monospace|cursive|fantasy|system-ui)$/i.test(requested);
       const exact = match.exact || generic;
-      this.fontUses.set(key, { requested, used: match.family, exact });
+      this.fontUses.set(key, { requested, used: match.family, exact, family, ...(match.key ? { face: match.key } : {}) });
       if (!exact) this.warn(`text set in "${match.family}" — "${requested}" is not available; convert type to outlines in the original for an exact match`);
     }
     return match;

@@ -196,17 +196,26 @@ export const rasterResolution: Rule = ({ design, geom, options }) => {
     if (dpi >= options.targetDpi) continue;
 
     const unusable = dpi < options.minDpi;
+    // A picture INSIDE vector artwork: the vector parts print sharp at any
+    // size, so the message has to say which part will not.
+    const what = el.image.embedded ? `The image inside "${el.name}"` : `"${el.name}"`;
     issues.push({
       rule: 'raster-resolution',
       severity: 'warning',
       ...named(el),
       message: unusable
-        ? `"${el.name}" is far too low resolution and will print visibly blocky.`
-        : `"${el.name}" is below ${options.targetDpi}dpi and will print softer than the vector artwork around it.`,
-      remedy: unusable
-        ? `Supply it at least ${Math.ceil((options.targetDpi * widthMm) / 25.4)}px wide, or ask for an SVG.`
-        : `Scale it down, or supply it at ${Math.ceil((options.targetDpi * widthMm) / 25.4)}px wide.`,
-      measurement: `${Math.round(dpi)}dpi at ${mm(widthMm)} wide (${el.image.naturalWidth}px)`,
+        ? `${what} is far too low resolution and will print visibly blocky.`
+        : `${what} is below ${options.targetDpi}dpi and will print softer than the vector artwork around it.`,
+      remedy: el.image.embedded
+        ? (unusable
+          ? 'Scale the artwork down, or ask for the file with a higher-resolution image in it.'
+          : 'Scale the artwork down a little, or ask for a higher-resolution image in the file.')
+        : unusable
+          ? `Supply it at least ${Math.ceil((options.targetDpi * widthMm) / 25.4)}px wide, or ask for an SVG.`
+          : `Scale it down, or supply it at ${Math.ceil((options.targetDpi * widthMm) / 25.4)}px wide.`,
+      measurement: el.image.embedded
+        ? `${Math.round(dpi)}dpi as placed`
+        : `${Math.round(dpi)}dpi at ${mm(widthMm)} wide (${el.image.naturalWidth}px)`,
     });
   }
   return issues;

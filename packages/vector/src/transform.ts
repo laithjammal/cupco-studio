@@ -91,14 +91,23 @@ function isFullBleedPlate(
  * design.
  */
 export function dropBackgroundPlate(art: PlacedArtwork): PlacedArtwork {
-  if (art.shapes.length < 2) return art; // nothing left if we drop the only shape
-  const first = art.shapes[0]!;
+  // Something has to be left once the plate is gone - an embedded photo
+  // counts, so a white frame behind a picture still comes off.
+  if (art.shapes.length + (art.rasters?.length ?? 0) < 2) return art;
+  const first = art.shapes[0];
+  if (!first) return art;
   // One subpath only: a ring with a hole is a drawn element, not a ground.
   if (first.subpaths.length !== 1) return art;
   const ring = first.subpaths[0]!;
   const isPlate = isFullBleedRect(ring) || isFullBleedPlate(ring, first.fill);
   if (!isPlate) return art;
-  return { ...art, shapes: art.shapes.slice(1) };
+  return {
+    ...art,
+    shapes: art.shapes.slice(1),
+    // Images keep their place in the painting order, which is counted in
+    // shapes - so with one shape fewer below them, each moves down one.
+    ...(art.rasters ? { rasters: art.rasters.map((r) => ({ ...r, before: Math.max(0, r.before - 1) })) } : {}),
+  };
 }
 
 /** True when the artwork carries a removable background plate. */

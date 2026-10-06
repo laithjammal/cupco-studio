@@ -15,8 +15,8 @@
 import { hexToRgb, rgbToCmyk } from '@cupco/vector';
 import type { CMYK } from '@cupco/vector';
 import type { PreflightDesign, PreflightElement } from '@cupco/preflight';
-import { elementCorners, halfExtent } from './design';
-import type { Design, DesignElement } from './design';
+import { elementCorners, halfExtent, stretchOf } from './design';
+import type { Design, DesignElement, VectorElement } from './design';
 
 const BLACK: CMYK = { c: 0, m: 0, y: 0, k: 1 };
 
@@ -40,6 +40,26 @@ function inksFor(el: DesignElement): CMYK[] {
     case 'image':
       return [];
   }
+}
+
+/**
+ * The least-resolved picture inside vector artwork, as the resolution rule
+ * wants it: pixel width scaled up to what it would be across the whole
+ * element. A photo filling a quarter of the badge's width at 300px reads as
+ * a 1200px element, so the rule's own arithmetic gives the photo's real dpi.
+ */
+function embeddedPicture(el: VectorElement): PreflightElement['image'] | undefined {
+  let worst: { naturalWidth: number; naturalHeight: number; embedded: true } | undefined;
+  const yScale = el.art.aspect * stretchOf(el);
+  for (const r of el.art.rasters ?? []) {
+    const share = Math.hypot(r.matrix[0], r.matrix[1] * yScale);
+    if (!(share > 0)) continue;
+    const across = r.naturalWidth / share;
+    if (!worst || across < worst.naturalWidth) {
+      worst = { naturalWidth: across, naturalHeight: r.naturalHeight / share, embedded: true };
+    }
+  }
+  return worst;
 }
 
 export function toPreflightDesign(
@@ -81,6 +101,10 @@ export function toPreflightDesign(
         ...base,
         qr: { url: el.url, live: el.live, moduleCount: el.moduleCount },
       };
+    }
+    if (el.type === 'vector') {
+      const image = embeddedPicture(el);
+      if (image) return { ...base, image };
     }
     return base;
   });

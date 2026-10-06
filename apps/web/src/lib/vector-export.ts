@@ -25,13 +25,19 @@
 import { PDFDocument, cmyk } from 'pdf-lib';
 import {
   buildFanOutline, fanBounds, warpShapeWrapped, warpShape, DEFAULT_FLATNESS_MM,
-  boundaryURange, boundaryVRange,
+  boundaryURange, boundaryVRange, designWidthToMm,
   type CupProfile, type FrustumGeometry, type DesignShape, type FanShape, type Point2,
 } from '@cupco/geometry';
-import { placeArtwork, matchPalette, rgbToCmyk, type PaletteEntry, type RGB } from '@cupco/vector';
+import {
+  placeArtwork, rasterPlacement, matchPalette, rgbToCmyk,
+  type PaletteEntry, type RGB, type PlacedRaster,
+} from '@cupco/vector';
+import { warpPictureToFan, type FanPicture, type RasterImage } from '@cupco/render';
 import { getLoadedFont, outlineText } from './fonts';
 import { stretchOf } from './design';
 import type { Design, DesignElement } from './design';
+import { decodedRaster, preloadRasters } from './raster-cache';
+import { drawFanPicture } from './pdf-picture';
 
 const MM_PER_INCH = 25.4;
 const PT_PER_MM = 72 / MM_PER_INCH;
@@ -40,6 +46,11 @@ export interface VectorEligibility {
   eligible: boolean;
   /** Names of elements that cannot be represented as vector. */
   blockers: { name: string; reason: string }[];
+  /**
+   * Vector artwork with pictures inside it. Still eligible - the paths stay
+   * paths - but the pictures print as pixels, and the operator should know.
+   */
+  pictures: { name: string; count: number }[];
 }
 
 /**
@@ -51,7 +62,11 @@ export interface VectorEligibility {
  */
 export function checkVectorEligibility(design: Design): VectorEligibility {
   const blockers: { name: string; reason: string }[] = [];
+  const pictures: { name: string; count: number }[] = [];
   for (const el of design.elements) {
+    if (el.type === 'vector' && el.art.rasters?.length) {
+      pictures.push({ name: el.name, count: el.art.rasters.length });
+    }
     if (el.type === 'image') {
       blockers.push({
         name: el.name,
@@ -61,7 +76,7 @@ export function checkVectorEligibility(design: Design): VectorEligibility {
       blockers.push({ name: el.name, reason: 'font still loading — retry in a moment' });
     }
   }
-  return { eligible: blockers.length === 0, blockers };
+  return { eligible: blockers.length === 0, blockers, pictures };
 }
 
 /** Every fill colour used by the design, for building the ink list. */
@@ -98,25 +113,117 @@ function inkFor(rgb: RGB, palette: readonly PaletteEntry[]) {
   return cmyk(v.c, v.m, v.y, v.k);
 }
 
-/** Build every warped shape for the design, in fan millimetres. */
-function buildFanShapes(
+/** One thing to paint on the fan, in painting order. */
+type FanLayer =
+  | { kind: 'shape'; shape: FanShape }
+  | { kind: 'picture'; picture: FanPicture };
+
+/**
+ * A picture's pixels, ready to warp: decoded, and cut to its clip.
+ *
+ * The clip is applied here, in the picture's own pixel grid, so the warp is
+ * a plain image warp and the clip edge is antialiased at the picture's own
+ * resolution. Very large pictures are brought down to 4096px on the long
+ * side - still far beyond what any logo-sized placement can print.
+ */
+export function picturePixels(r: PlacedRaster, minWidth = 0): RasterImage | null {
+  const img = decodedRaster(r.href);
+  if (!img || img.naturalWidth <= 0 || img.naturalHeight <= 0) return null;
+  // At least as dense as the output, so a clip is cut at print resolution:
+  // cut at a small picture's own resolution, a crisp circular frame comes
+  // out with an edge as soft as the picture's pixels are large.
+  const up = Math.max(1, minWidth / img.naturalWidth);
+  const k = Math.min(up, 4096 / Math.max(img.naturalWidth, img.naturalHeight));
+  const W = Math.max(1, Math.round(img.naturalWidth * k));
+  const H = Math.max(1, Math.round(img.naturalHeight * k));
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+  if (r.clip && r.clip.length) {
+    // Artwork units -> the picture's unit square -> its pixels.
+    const m = r.matrix;
+    const det = m[0] * m[3] - m[1] * m[2];
+    if (!det) return null;
+    const a = m[3] / det, b = -m[1] / det, c = -m[2] / det, d = m[0] / det;
+    const e = -(a * m[4] + c * m[5]), f = -(b * m[4] + d * m[5]);
+    ctx.beginPath();
+    for (const ring of r.clip) {
+      ring.forEach((p, i) => {
+        const x = (a * p.x + c * p.y + e) * W, y = (b * p.x + d * p.y + f) * H;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.closePath();
+    }
+    ctx.clip('nonzero');
+  }
+  ctx.drawImage(img, 0, 0, W, H);
+  const data = ctx.getImageData(0, 0, W, H);
+  return { width: W, height: H, data: data.data as Uint8ClampedArray<ArrayBuffer> };
+}
+
+/** How wide a placed picture prints, in mm, measured at its middle. */
+function placedWidthMm(toDesign: readonly number[], geom: FrustumGeometry): number {
+  const v = toDesign[1]! * 0.5 + toDesign[3]! * 0.5 + toDesign[5]!;
+  return Math.hypot(designWidthToMm(toDesign[0]!, v, geom), toDesign[1]! * geom.slantMm);
+}
+
+/**
+ * Print resolution for a picture: its own, within reason.
+ *
+ * Never below 300dpi, so a soft picture is smoothed rather than blocky, and
+ * never above 600dpi, past which the press cannot use the extra pixels and
+ * the file only gets bigger.
+ */
+function pictureDpi(pixelsWide: number, wideMm: number): number {
+  const own = wideMm > 0 ? pixelsWide / (wideMm / 25.4) : 300;
+  return Math.min(600, Math.max(300, own));
+}
+
+/** Build everything the design paints on the fan, in fan millimetres, in order. */
+function buildFanLayers(
   design: Design,
   profile: CupProfile,
   geom: FrustumGeometry,
   toleranceMm: number,
-): FanShape[] {
+): FanLayer[] {
   const cw = profile.designCanvas.widthPx;
   const ch = profile.designCanvas.heightPx;
-  const out: FanShape[] = [];
+  const out: FanLayer[] = [];
+  const push = (shape: DesignShape, wrap: boolean) => {
+    if (wrap) for (const s of warpShapeWrapped(shape, geom, toleranceMm)) out.push({ kind: 'shape', shape: s });
+    else out.push({ kind: 'shape', shape: warpShape(shape, geom, toleranceMm) });
+  };
 
   for (const el of design.elements) {
     let placed: DesignShape[] = [];
 
     if (el.type === 'vector') {
-      placed = placeArtwork(el.art, {
+      const t = {
         u: el.u, v: el.v, widthU: el.widthU, rotation: el.rotation,
         canvasW: cw, canvasH: ch, stretchV: stretchOf(el),
-      }).map((sh) => ({ ...sh, opacity: sh.opacity * (el.opacity ?? 1) }));
+      };
+      const shapes = placeArtwork(el.art, t)
+        .map((sh) => ({ ...sh, opacity: sh.opacity * (el.opacity ?? 1) }));
+      const rasters = el.art.rasters ?? [];
+      // Pictures go between the paths exactly where the file had them.
+      const picture = (r: PlacedRaster) => {
+        const toDesign = rasterPlacement(r, el.art, t);
+        const wideMm = placedWidthMm(toDesign, geom);
+        const dpi = pictureDpi(r.naturalWidth, wideMm);
+        const px = picturePixels(r, Math.ceil((wideMm / 25.4) * dpi));
+        if (!px) return;
+        for (const p of warpPictureToFan(px, toDesign, geom, { dpi, opacity: r.opacity * (el.opacity ?? 1) })) {
+          out.push({ kind: 'picture', picture: p });
+        }
+      };
+      shapes.forEach((sh, i) => {
+        for (const r of rasters) if (r.before === i) picture(r);
+        push(sh, true);
+      });
+      for (const r of rasters) if (r.before >= shapes.length) picture(r);
+      continue;
     } else if (el.type === 'text') {
       // Outlined from the same font file the preview rendered with, laid out
       // at the same advances — so the printed text matches what was approved.
@@ -166,17 +273,23 @@ function buildFanShapes(
       continue;
     }
 
-    for (const shape of placed) {
-      if (el.type === 'band') {
-        // Already spans the full circumference; wrapping would emit duplicates.
-        out.push(warpShape(shape, geom, toleranceMm));
-      } else {
-        // Wrapped, so artwork crossing the glue seam stays continuous.
-        out.push(...warpShapeWrapped(shape, geom, toleranceMm));
-      }
-    }
+    // Bands already span the full circumference, and wrapping them would
+    // emit duplicates; everything else wraps, so artwork crossing the glue
+    // seam stays continuous.
+    for (const shape of placed) push(shape, el.type !== 'band');
   }
   return out;
+}
+
+/** A warped picture as a PNG data URL, for the SVG export. */
+function pictureDataUrl(pic: FanPicture): string {
+  const c = document.createElement('canvas');
+  c.width = pic.image.width;
+  c.height = pic.image.height;
+  const ctx = c.getContext('2d');
+  if (!ctx) return '';
+  ctx.putImageData(new ImageData(pic.image.data, pic.image.width, pic.image.height), 0, 0);
+  return c.toDataURL('image/png');
 }
 
 /** Fan mm -> PDF path units, anchored top-left with y increasing downward. */
@@ -193,6 +306,8 @@ function toPathString(subpaths: Point2[][], minX: number, minY: number): string 
 export interface VectorPdfResult {
   blob: Blob;
   pathCount: number;
+  /** Pictures embedded among the paths, as CMYK images. */
+  pictureCount: number;
   pointCount: number;
   widthMm: number;
   heightMm: number;
@@ -227,7 +342,9 @@ export async function exportFanPdfVector(
   const widthMm = b.widthMm + pad * 2;
   const heightMm = b.heightMm + pad * 2;
 
-  const shapes = buildFanShapes(design, profile, geom, toleranceMm);
+  // Pictures are drawn synchronously below, so every one must be decoded first.
+  await preloadRasters(design.elements.map((el) => (el.type === 'vector' ? el.art : null)));
+  const layers = buildFanLayers(design, profile, geom, toleranceMm);
 
   onProgress?.('Building PDF…');
   const pdf = await PDFDocument.create();
@@ -265,10 +382,17 @@ export async function exportFanPdfVector(
     borderWidth: 0,
   });
 
-  let pointCount = 0;
-  for (const shape of shapes) {
+  let pointCount = 0, pathCount = 0, pictureCount = 0;
+  for (const layer of layers) {
+    if (layer.kind === 'picture') {
+      drawFanPicture(pdf, page, layer.picture, { minX, minY, pageH, ptPerMm: PT_PER_MM });
+      pictureCount++;
+      continue;
+    }
+    const shape = layer.shape;
     const d = toPathString(shape.subpaths, minX, minY);
     if (!d) continue;
+    pathCount++;
     pointCount += shape.subpaths.reduce((n, r) => n + r.length, 0);
     page.drawSvgPath(d, {
       x: 0, y: pageH, scale: PT_PER_MM,
@@ -284,7 +408,8 @@ export async function exportFanPdfVector(
 
   return {
     blob: new Blob([buf], { type: 'application/pdf' }),
-    pathCount: shapes.length,
+    pathCount,
+    pictureCount,
     pointCount,
     widthMm, heightMm,
     ms: Math.round(performance.now() - t0),
@@ -297,13 +422,13 @@ export async function exportFanPdfVector(
 }
 
 /** Pure vector SVG, in true millimetres, with the dieline as separate layers. */
-export function exportFanSvgVector(
+export async function exportFanSvgVector(
   design: Design,
   profile: CupProfile,
   geom: FrustumGeometry,
   palette: readonly PaletteEntry[],
   toleranceMm: number = DEFAULT_FLATNESS_MM,
-): { blob: Blob; pathCount: number; pointCount: number } {
+): Promise<{ blob: Blob; pathCount: number; pictureCount: number; pointCount: number }> {
   const cut = buildFanOutline(profile, geom, 'cut', 1024);
   const bleed = buildFanOutline(profile, geom, 'bleed', 1024);
   const b = fanBounds(bleed.points);
@@ -311,13 +436,26 @@ export function exportFanSvgVector(
   const minX = b.minX - pad, minY = b.minY - pad;
   const W = b.widthMm + pad * 2, H = b.heightMm + pad * 2;
 
-  const shapes = buildFanShapes(design, profile, geom, toleranceMm);
-  let pointCount = 0;
+  await preloadRasters(design.elements.map((el) => (el.type === 'vector' ? el.art : null)));
+  const layers = buildFanLayers(design, profile, geom, toleranceMm);
+  let pointCount = 0, pathCount = 0, pictureCount = 0;
 
   const bg = toPathString([bleed.points], minX, minY);
-  const body = shapes.map((s) => {
+  const body = layers.map((layer) => {
+    if (layer.kind === 'picture') {
+      // SVG has no CMYK, so the picture travels as RGB like the fills do.
+      const p = layer.picture;
+      const href = pictureDataUrl(p);
+      if (!href) return '';
+      pictureCount++;
+      return `    <image x="${(p.originXMm - minX).toFixed(4)}" y="${(p.originYMm - minY).toFixed(4)}"`
+        + ` width="${(p.image.width * p.mmPerPixel).toFixed(4)}" height="${(p.image.height * p.mmPerPixel).toFixed(4)}"`
+        + ` preserveAspectRatio="none" href="${href}"/>`;
+    }
+    const s = layer.shape;
     const d = toPathString(s.subpaths, minX, minY);
     if (!d) return '';
+    pathCount++;
     pointCount += s.subpaths.reduce((n, r) => n + r.length, 0);
     const hit = palette.length ? matchPalette(palette, s.fill) : null;
     const v = hit && hit.overridden ? hit.cmyk : rgbToCmyk(s.fill);
@@ -352,7 +490,8 @@ ${body}
 
   return {
     blob: new Blob([svg], { type: 'image/svg+xml' }),
-    pathCount: shapes.length,
+    pathCount,
+    pictureCount,
     pointCount,
   };
 }

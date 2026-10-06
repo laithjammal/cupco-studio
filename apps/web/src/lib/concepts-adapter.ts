@@ -24,10 +24,17 @@ import {
 } from './design';
 import { getPreparedTemplate, prepareTemplate, templateAssetId } from './template-art';
 import type { ArtworkTreatment } from '@cupco/concepts';
+import type { VectorSource } from '@cupco/persistence';
 
 export interface ConceptSource {
   art: PlacedArtwork;
   name: string;
+  /**
+   * The logo's original file, when it has one. Each concept's copy of the
+   * logo records its treatment on it, so a later re-import of the file can
+   * treat the fresh artwork the same way.
+   */
+  source?: VectorSource;
 }
 
 /** Build the engine input from an uploaded asset. */
@@ -72,7 +79,7 @@ export function conceptsFor(
  * The transform is applied to a COPY, so the original upload is untouched and
  * switching concepts restores it.
  */
-function treatArtwork(art: PlacedArtwork, treatment?: ArtworkTreatment): PlacedArtwork {
+export function treatArtwork(art: PlacedArtwork, treatment?: ArtworkTreatment): PlacedArtwork {
   // The plate is stripped by DEFAULT. Exported logos routinely carry a white
   // rectangle behind the mark; harmless on white paper, but on any coloured
   // cup it prints as a box around the logo. A strategy has to opt out
@@ -205,7 +212,13 @@ export function materialiseConcept(
       });
     } else {
       const art = treatArtwork(source.art, p.treatment);
-      const el = createVectorElement(art, source.name, false);
+      const origin = source.source
+        ? {
+            ...source.source,
+            edits: [...(source.source.edits ?? []), { kind: 'treatment' as const, treatment: { ...p.treatment } }],
+          }
+        : undefined;
+      const el = createVectorElement(art, source.name, false, origin);
       elements.push({
         ...el,
         u: p.u, v: p.v, rotation: p.rotation,

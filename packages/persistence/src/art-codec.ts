@@ -48,6 +48,24 @@ export function quantiseArt(art: StoredArt): StoredArt {
       subpaths: shape.subpaths.map((sp) =>
         sp.map((p) => ({ x: round(p.x, COORD_PRECISION), y: round(p.y, COORD_PRECISION) }))),
     })),
+    // Embedded images, likewise field by field. The bytes are the original
+    // encoding and are kept verbatim; only the placement is rounded, to the
+    // same precision as the paths it sits among.
+    ...(art.rasters?.length ? {
+      rasters: art.rasters.map((r) => ({
+        href: r.href,
+        mime: r.mime,
+        matrix: r.matrix.map((n) => round(n, COORD_PRECISION)) as typeof r.matrix,
+        naturalWidth: r.naturalWidth,
+        naturalHeight: r.naturalHeight,
+        opacity: round(r.opacity, 4),
+        before: r.before,
+        ...(r.clip ? {
+          clip: r.clip.map((ring) =>
+            ring.map((p) => ({ x: round(p.x, COORD_PRECISION), y: round(p.y, COORD_PRECISION) }))),
+        } : {}),
+      })),
+    } : {}),
   };
 }
 

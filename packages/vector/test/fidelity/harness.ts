@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { Resvg } from '@resvg/resvg-js';
 import opentype from 'opentype.js';
 import { gposKerning, type KernFn } from '../../src/svg/kerning';
+import { compareRenders } from '../../src/fidelity';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const CORPUS_DIR = join(here, 'corpus');
@@ -239,47 +240,18 @@ export function reconstruct(res: ResultLike): string {
 
 /* ------------------------------- comparison ------------------------------- */
 
-const T = 40;
-
-const near = (a: Uint8Array, i: number, b: Uint8Array, j: number) =>
-  Math.abs(a[i]! - b[j]!) <= T && Math.abs(a[i + 1]! - b[j + 1]!) <= T && Math.abs(a[i + 2]! - b[j + 2]!) <= T;
-
 /**
- * Fraction of the ARTWORK that differs.
- *
- * Normalised by inked area rather than by canvas area, so a missing logo on a
- * big empty page still reads as a large failure. A pixel only counts as wrong
- * if no pixel within one step of it matches either - so curve flattening and
- * antialiasing, which shift an edge by a fraction of a pixel, do not register,
- * while anything genuinely missing, added or recoloured does.
+ * Fraction of the ARTWORK that differs - see compareRenders, which the app's
+ * in-browser check also uses, so the suite and the screen cannot disagree
+ * about what "different" means.
  */
 export function mismatch(a: Raster, b: Raster): { fraction: number; mask: Uint8Array } {
-  const w = Math.min(a.w, b.w), h = Math.min(a.h, b.h);
-  const mask = new Uint8Array(w * h);
-  let inked = 0, bad = 0;
-  const isInk = (r: Raster, i: number) =>
-    Math.abs(r.data[i]! - BG) > 8 || Math.abs(r.data[i + 1]! - BG) > 8 || Math.abs(r.data[i + 2]! - BG) > 8;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const ia = (y * a.w + x) * 4, ib = (y * b.w + x) * 4;
-      if (isInk(a, ia) || isInk(b, ib)) inked++;
-      if (near(a.data, ia, b.data, ib)) continue;
-      let ok1 = false, ok2 = false;
-      for (let dy = -1; dy <= 1 && !(ok1 && ok2); dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const xx = x + dx, yy = y + dy;
-          if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
-          if (!ok1 && near(a.data, (yy * a.w + xx) * 4, b.data, ib)) ok1 = true;
-          if (!ok2 && near(b.data, (yy * b.w + xx) * 4, a.data, ia)) ok2 = true;
-        }
-      }
-      if (ok1 && ok2) continue;
-      bad++;
-      mask[y * w + x] = 1;
-    }
-  }
-  if (a.w !== b.w || a.h !== b.h) return { fraction: 1, mask };
-  return { fraction: bad / Math.max(1, inked), mask };
+  const { fraction, mask } = compareRenders(
+    { width: a.w, height: a.h, data: a.data },
+    { width: b.w, height: b.h, data: b.data },
+    { background: [BG, BG, BG] },
+  );
+  return { fraction, mask };
 }
 
 /** Reference | ours | differences (red), for looking at rather than scoring. */

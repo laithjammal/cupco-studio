@@ -116,3 +116,33 @@ describe('quantiseArt keeps what a shape needs', () => {
     expect(out.shapes[0].fillRule).toBe('nonzero');
   });
 });
+
+describe('embedded images survive storage', () => {
+  const withImage: StoredArt = {
+    aspect: 0.5,
+    shapes: [{ fill: [10, 20, 30], opacity: 1, subpaths: [[{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }]] }],
+    rasters: [{
+      href: 'data:image/png;base64,iVBORw0KGgo=', mime: 'image/png',
+      matrix: [0.333333333333, 0, 0, 0.5, 0.1234567891, 0.25],
+      naturalWidth: 640, naturalHeight: 480, opacity: 0.8, before: 1,
+      clip: [[{ x: 0.12345678, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }]],
+    }],
+  };
+
+  it('keeps the image, its place in the order, and its clip', () => {
+    // quantiseArt rebuilds artwork field by field; a field it does not name
+    // is silently dropped on save - which is how fillRule was once lost.
+    const q = quantiseArt(withImage);
+    const r = q.rasters![0]!;
+    expect(r.href).toBe(withImage.rasters![0]!.href);
+    expect(r.before).toBe(1);
+    expect([r.naturalWidth, r.naturalHeight]).toEqual([640, 480]);
+    expect(r.clip).toHaveLength(1);
+    expect(Math.abs(r.matrix[4] - 0.1234567891)).toBeLessThanOrEqual(MAX_QUANTISATION_ERROR);
+    expect(Math.abs(r.clip![0]![0]!.x - 0.12345678)).toBeLessThanOrEqual(MAX_QUANTISATION_ERROR);
+  });
+
+  it('adds nothing to artwork that has no images', () => {
+    expect('rasters' in quantiseArt(art([[0, 0], [1, 0], [1, 1]]))).toBe(false);
+  });
+});
