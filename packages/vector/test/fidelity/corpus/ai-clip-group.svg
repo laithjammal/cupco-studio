@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 200 200">
+  <defs>
+    <style>
+      .cls-1{fill:none;}.cls-2{clip-path:url(#clippath);}.cls-3{fill:#1d3f2b;}.cls-4{fill:#e6a670;}
+    </style>
+    <clipPath id="clippath">
+      <circle class="cls-1" cx="100" cy="100" r="80"/>
+    </clipPath>
+  </defs>
+  <g class="cls-2">
+    <rect class="cls-3" x="0" y="0" width="200" height="110"/>
+    <rect class="cls-4" x="0" y="110" width="200" height="90"/>
+  </g>
+</svg>

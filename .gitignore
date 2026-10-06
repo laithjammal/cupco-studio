@@ -23,3 +23,6 @@ out/
 # 8oz profile was measured against, but NOT committed: it is the customer's
 # confidential document and this repository is public.
 Drawings/
+
+# Throwaway investigation scripts
+.probe/

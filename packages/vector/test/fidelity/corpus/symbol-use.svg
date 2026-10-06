@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 200 100">
+  <symbol id="bean" viewBox="0 0 20 30"><ellipse cx="10" cy="15" rx="9" ry="14" fill="#29231f"/><path d="M10 2 C 6 10 14 20 10 28" stroke="#e6a670" stroke-width="2" fill="none"/></symbol>
+  <use xlink:href="#bean" x="10" y="10" width="40" height="60"/>
+  <use href="#bean" x="70" y="10" width="20" height="30"/>
+  <use href="#bean" x="110" y="10" width="80" height="40"/>
+</svg>

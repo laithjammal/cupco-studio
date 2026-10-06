@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 200 100">
+  <rect width="200" height="100" fill="#f5e9d2"/>
+  <image x="20" y="10" width="80" height="80" xlink:href="__SVG_BADGE__"/>
+  <image x="110" y="10" width="80" height="80" preserveAspectRatio="xMinYMin slice" xlink:href="__PNG_WIDE__" transform="rotate(5 150 50)"/>
+</svg>

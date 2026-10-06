@@ -14,9 +14,13 @@
   },
   "dependencies": {
     "@cupco/geometry": "*",
+    "clipper-lib": "^6.4.2",
     "imagetracerjs": "^1.2.6"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/clipper-lib": "^6.4.0",
+    "opentype.js": "^2.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

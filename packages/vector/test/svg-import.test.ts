@@ -69,12 +69,22 @@ describe('CSS in <style>', () => {
     ))).toEqual(['#abcdef']);
   });
 
+  it('applies descendant and child selectors, as a browser does', () => {
+    // `.logo .mark` used to be skipped as "too complex", and the shape fell
+    // back to black.
+    expect(hexes(svg(
+      '<style>.logo .mark{fill:#c8102e} g > rect.accent{fill:#f2a900}</style>',
+      '<g class="logo"><rect class="mark" width="10" height="10"/></g>'
+      + '<g><rect class="accent" x="20" width="10" height="10"/></g>',
+    ))).toEqual(['#c8102e', '#f2a900']);
+  });
+
   it('says so rather than guessing when a selector is beyond it', () => {
     const r = importSvg(svg(
-      '<style>.a .b{fill:#00ff00;}</style>',
+      '<style>.b::before{fill:#00ff00;}</style>',
       '<rect class="b" fill="#ff0000" width="10" height="10"/>',
     ));
-    expect(r.warnings.join(' ')).toMatch(/too complex/);
+    expect(r.warnings.join(' ')).toMatch(/could not be applied/);
     // and leaves the attribute's colour alone rather than misapplying the rule
     expect(r.shapes[0]!.fill).toEqual([255, 0, 0]);
   });
@@ -150,11 +160,16 @@ describe('silent losses', () => {
       .toHaveLength(1);
   });
 
-  it('warns that a clip is not applied rather than quietly over-drawing', () => {
+  it('applies a clip path rather than over-drawing', () => {
+    // A circle of radius 40 clipped to a 50x50 square: nothing may fall outside it.
     const r = importSvg(wrap(
       '<defs><clipPath id="c"><rect width="50" height="50"/></clipPath></defs>'
       + '<circle cx="50" cy="50" r="40" fill="#c8102e" clip-path="url(#c)"/>'));
-    expect(r.warnings.join(' ')).toMatch(/clipping/);
+    const pts = r.shapes.flatMap((s) => s.subpaths.flatMap((p) => p.points));
+    expect(pts.length).toBeGreaterThan(0);
+    expect(Math.max(...pts.map((p) => p.x))).toBeLessThanOrEqual(50 + 1e-6);
+    expect(Math.max(...pts.map((p) => p.y))).toBeLessThanOrEqual(50 + 1e-6);
+    expect(r.warnings.join(' ')).not.toMatch(/clip/);
   });
 });
 

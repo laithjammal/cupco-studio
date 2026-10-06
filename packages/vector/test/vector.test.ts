@@ -222,10 +222,9 @@ describe('SVG import', () => {
     expect(r.shapes).toHaveLength(0);
   });
 
-  it('ignores <defs> and warns about clip paths and masks', () => {
+  it('draws nothing for <defs> or an unused clip path - as a browser does', () => {
     const r = importSvg(svg('<defs><rect width="9" height="9" fill="#f00"/></defs><clipPath id="c"><rect width="1" height="1"/></clipPath>'));
     expect(r.shapes).toHaveLength(0);
-    expect(r.warnings.join(' ')).toMatch(/clippath/i);
   });
 
   it('warns rather than silently dropping text', () => {
@@ -233,10 +232,28 @@ describe('SVG import', () => {
     expect(r.warnings.join(' ')).toMatch(/text/i);
   });
 
-  it('warns when a gradient is flattened', () => {
+  it('paints nothing for a fill that points at a missing gradient, and says so', () => {
+    // Checked in a browser: a paint reference to nothing, with no fallback,
+    // is not painted at all.
     const r = importSvg(svg('<path d="M0 0 L5 0 L5 5 Z" fill="url(#grad)"/>'));
-    expect(r.warnings.join(' ')).toMatch(/gradient/i);
-    expect(r.shapes).toHaveLength(1); // kept, not dropped
+    expect(r.shapes).toHaveLength(0);
+    expect(r.warnings.join(' ')).toMatch(/not in the file/);
+  });
+
+  it('uses the fallback colour a paint reference names', () => {
+    const r = importSvg(svg('<path d="M0 0 L5 0 L5 5 Z" fill="url(#grad) #c8102e"/>'));
+    expect(r.shapes[0]!.fill).toEqual([200, 16, 46]);
+  });
+
+  it('cuts a gradient into bands of its own colours, instead of flattening it', () => {
+    const r = importSvg(svg(
+      '<defs><linearGradient id="g"><stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#fff"/></linearGradient></defs>'
+      + '<rect width="10" height="10" fill="url(#g)"/>'));
+    expect(r.shapes.length).toBeGreaterThan(20);
+    const greys = r.shapes.map((s) => s.fill[0]);
+    expect(Math.min(...greys)).toBeLessThan(10);
+    expect(Math.max(...greys)).toBeGreaterThan(245);
+    expect(r.warnings.join(' ')).not.toMatch(/flatten/);
   });
 
   it('ignores XML comments containing markup', () => {

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #f5e9d2;
+      }
+
+      .cls-2 {
+        fill: #29231f;
+        fill-rule: evenodd;
+      }
+
+      .cls-3 {
+        fill: #c8102e;
+      }
+    </style>
+  </defs>
+  <circle class="cls-1" cx="120" cy="120" r="118"/>
+  <path class="cls-2" d="M120,30a90,90,0,1,0,90,90A90.1,90.1,0,0,0,120,30Zm0,165a75,75,0,1,1,75-75A75.09,75.09,0,0,1,120,195Z"/>
+  <path class="cls-3" d="M95.5,150.5h49l-24.5-60Z"/>
+</svg>

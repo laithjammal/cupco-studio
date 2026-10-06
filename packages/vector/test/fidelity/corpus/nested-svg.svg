@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+  <svg x="10" y="10" width="80" height="80" viewBox="0 0 10 10"><rect width="10" height="10" fill="#1d3f2b"/><circle cx="5" cy="5" r="3" fill="#f2a900"/><rect x="8" y="8" width="20" height="20" fill="#c8102e"/></svg>
+  <svg x="110" y="10" width="80" height="40" viewBox="0 0 10 10" preserveAspectRatio="xMidYMid meet"><rect width="10" height="10" fill="#c8102e"/></svg>
+  <svg x="110" y="55" width="80" height="40" viewBox="0 0 10 10" preserveAspectRatio="none"><rect width="10" height="10" fill="#e6a670"/></svg>
+</svg>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60">
+  <style>
+    @media screen { .mark { fill: #1d3f2b } }
+    .logo .mark { fill: #c8102e; }
+    g > rect.accent { fill: #f2a900 }
+    [data-role="dot"] { fill: #e6a670 }
+    rect:first-child { stroke: #29231f; stroke-width: 2 }
+    #badge rect + rect { fill: #29231f }
+    @font-face { font-family: X; src: url(data:font/ttf;base64,AAAA) format("truetype") }
+  </style>
+  <g class="logo"><rect class="mark" x="2" y="2" width="20" height="20"/></g>
+  <g><rect class="accent" x="27" y="2" width="20" height="20"/></g>
+  <circle data-role="dot" cx="62" cy="12" r="10"/>
+  <g id="badge"><rect x="80" y="2" width="15" height="20" fill="#cccccc"/><rect x="100" y="2" width="15" height="20" fill="#cccccc"/></g>
+  <rect class="later" x="2" y="32" width="20" height="20" style="fill:#0000ff"/>
+</svg>

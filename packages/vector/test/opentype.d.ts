@@ -1,20 +1,12 @@
-/**
- * opentype.js ships no types. Declaring only what we use keeps the surface
- * honest rather than blanket-`any`-ing the module.
- */
+/** Test-only: opentype.js ships no types. Only what the fidelity harness uses. */
 declare module 'opentype.js' {
   export interface PathCommand {
     type: string;
     x?: number; y?: number; x1?: number; y1?: number; x2?: number; y2?: number;
   }
-  export interface Path {
-    commands: PathCommand[];
-    toPathData(decimalPlaces?: number): string;
-    getBoundingBox(): { x1: number; y1: number; x2: number; y2: number };
-  }
   export interface Glyph {
     advanceWidth?: number;
-    getPath(x: number, y: number, fontSize: number): Path;
+    getPath(x: number, y: number, fontSize: number): { commands: PathCommand[] };
   }
   export interface Font {
     unitsPerEm: number;
@@ -25,4 +17,6 @@ declare module 'opentype.js' {
     tables: { os2?: { sxHeight?: number } };
   }
   export function parse(buffer: ArrayBuffer): Font;
+  const opentype: { parse(buffer: ArrayBuffer): Font };
+  export default opentype;
 }
